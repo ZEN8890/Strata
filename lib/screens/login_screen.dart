@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login Strata Lite')),
+      appBar: AppBar(title: const Text('Login Page')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
