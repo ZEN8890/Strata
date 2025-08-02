@@ -19,7 +19,7 @@
     <application
         android:label="projek_strata_mini"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/launcher_icon"
         android:requestLegacyExternalStorage="true"> <!-- Penting untuk kompatibilitas Android 10-12 -->
         <activity
             android:name=".MainActivity"
