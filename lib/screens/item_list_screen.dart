@@ -966,7 +966,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
 
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                 return const Center(
-                    child: Text('Belum ada barang diinventaris.'));
+                    child: Text('Belum ada barang di inventaris.'));
               }
 
               List<Item> allItems = snapshot.data!.docs.map((doc) {
