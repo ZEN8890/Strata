@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:Strata_lite/models/item.dart';
 import 'package:Strata_lite/models/log_entry.dart';
 import 'package:another_flushbar/flushbar.dart';
+import 'package:audioplayers/audioplayers.dart'; // Import paket audioplayers
 
 class TakeItemScreen extends StatefulWidget {
   const TakeItemScreen({super.key});
@@ -34,6 +35,9 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // Deklarasi AudioPlayer
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
   @override
   void initState() {
     super.initState();
@@ -48,11 +52,22 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
     _barcodeController.dispose();
     _quantityController.dispose();
     _remarksController.dispose();
-    _scannerController?.stop(); // Ensure scanner is stopped
+    _scannerController?.stop(); // Pastikan scanner dihentikan
     _scannerController?.dispose();
     _alertTimer?.cancel();
     _notificationTimer?.cancel();
+    _audioPlayer.dispose(); // Bersihkan AudioPlayer
     super.dispose();
+  }
+
+  // Fungsi untuk memutar suara saat scan berhasil
+  Future<void> _playScanSound() async {
+    try {
+      await _audioPlayer
+          .play(AssetSource('sounds/Beep.mp3')); // Ganti nama file jika berbeda
+    } catch (e) {
+      log('Error playing sound: $e');
+    }
   }
 
   void _showNotification(String title, String message, {bool isError = false}) {
@@ -124,6 +139,9 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
         _barcodeController.text = barcodeValue;
         _showNotification(
             'Barcode Ditemukan', 'Barcode EAN-13 terdeteksi: $barcodeValue');
+
+        // Memutar suara saat barcode berhasil dideteksi
+        _playScanSound();
 
         setState(() {
           _isScanning = false;
