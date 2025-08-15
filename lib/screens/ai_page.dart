@@ -1,4 +1,3 @@
-// Path: lib/screens/ai_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -249,7 +248,6 @@ class _AiPageState extends State<AiPage> {
 
     String result =
         "Maaf, saya tidak mengerti pertanyaan Anda. Coba tanyakan pertanyaan lain.";
-
     final loadingMessageIndex = _messages.length;
     setState(() {
       _messages.add({'sender': 'bot', 'text': '...'});
@@ -259,62 +257,53 @@ class _AiPageState extends State<AiPage> {
     try {
       final allItems = await _fetchAllItems();
       final queryLower = query.toLowerCase();
+      final targetDate = _parseDateFromQuery(queryLower);
 
-      DateTime? targetDate = _parseDateFromQuery(queryLower);
-      String processedQuery = queryLower;
-
-      if (targetDate != null) {
-        final dateWords = [
-          'hari ini',
-          'kemarin',
-          'lusa',
-          'minggu lalu',
-          'bulan lalu'
-        ];
-        for (var dateWord in dateWords) {
-          processedQuery = processedQuery.replaceAll(dateWord, '').trim();
-        }
-      }
-
-      final commandKeys = _commandMap.keys.toList();
-      String? matchedCommand =
-          _findBestMatch(processedQuery, commandKeys, threshold: 0.4);
-
-      if (matchedCommand != null) {
-        switch (_commandMap[matchedCommand]) {
-          case 'itemsAddedToday':
-            result = await _handleItemsAddedTodayQuery(allItems);
-            break;
-          case 'itemsTakenToday':
-            result = await _handleItemsTakenQuery(targetDate ?? DateTime.now());
-            break;
-          case 'lowStock':
-            result = await _handleLowStockQuery(allItems);
-            break;
-          case 'mostTaken':
-            result = await _handleMostTakenItemsQuery();
-            break;
-          case 'whoTookItems':
-            result = await _handleWhoTookItemsQuery(
-                allItems, targetDate ?? DateTime.now());
-            break;
-          case 'availableItems':
-            result = await _handleAvailableItemsQuery(allItems);
-            break;
-          case 'itemStock':
-            result = await _handleItemStockQuery(queryLower);
-            break;
-          case 'expiringSoon':
-            result = await _handleItemsExpiringSoon(allItems);
-            break;
-          case 'mostActiveStaff':
-            result = await _handleMostActiveStaffQuery();
-            break;
-          default:
-            result = "Maaf, saya tidak mengerti pertanyaan Anda.";
-        }
+      // Prioritaskan pencocokan untuk perintah yang membutuhkan tanggal atau spesifikasi
+      if (queryLower.contains('masuk') || queryLower.contains('tambah')) {
+        result = await _handleItemsAddedQuery(
+            targetDate ?? DateTime.now(), allItems);
+      } else if (queryLower.contains('keluar') ||
+          queryLower.contains('ambil') ||
+          queryLower.contains('diambil')) {
+        result = await _handleItemsTakenQuery(targetDate ?? DateTime.now());
+      } else if (queryLower.contains('siapa yang mengambil') ||
+          queryLower.contains('siapa yang ambil')) {
+        result = await _handleWhoTookItemsQuery(
+            allItems, targetDate ?? DateTime.now());
       } else {
-        result = await _handleItemStockQuery(queryLower);
+        // Untuk perintah lain, gunakan logika pencocokan yang ada
+        final commandKeys = _commandMap.keys.toList();
+        String? matchedCommand =
+            _findBestMatch(queryLower, commandKeys, threshold: 0.4);
+
+        if (matchedCommand != null) {
+          switch (_commandMap[matchedCommand]) {
+            case 'lowStock':
+              result = await _handleLowStockQuery(allItems);
+              break;
+            case 'mostTaken':
+              result = await _handleMostTakenItemsQuery();
+              break;
+            case 'availableItems':
+              result = await _handleAvailableItemsQuery(allItems);
+              break;
+            case 'itemStock':
+              result = await _handleItemStockQuery(queryLower);
+              break;
+            case 'expiringSoon':
+              result = await _handleItemsExpiringSoon(allItems);
+              break;
+            case 'mostActiveStaff':
+              result = await _handleMostActiveStaffQuery();
+              break;
+            default:
+              result = "Maaf, saya tidak mengerti pertanyaan Anda.";
+          }
+        } else {
+          // Jika tidak ada perintah yang cocok, cek apakah itu pertanyaan stok barang
+          result = await _handleItemStockQuery(queryLower);
+        }
       }
     } catch (e) {
       log("Error processing query: $e");
@@ -350,23 +339,26 @@ class _AiPageState extends State<AiPage> {
     return "Maaf, saya tidak menemukan barang yang cocok dengan nama tersebut.";
   }
 
-  Future<String> _handleItemsAddedTodayQuery(List<Item> allItems) async {
-    final today = DateTime.now();
-    final itemsToday = allItems
+  Future<String> _handleItemsAddedQuery(
+      DateTime date, List<Item> allItems) async {
+    final startOfDate = DateTime(date.year, date.month, date.day);
+    final endOfDate = startOfDate
+        .add(const Duration(days: 1))
+        .subtract(const Duration(seconds: 1));
+    final itemsAdded = allItems
         .where((item) =>
-            item.createdAt.year == today.year &&
-            item.createdAt.month == today.month &&
-            item.createdAt.day == today.day)
+            item.createdAt.isAfter(startOfDate) &&
+            item.createdAt.isBefore(endOfDate))
         .toList();
 
-    if (itemsToday.isNotEmpty) {
-      final totalItems = itemsToday.length;
-      final totalQuantity = itemsToday
+    if (itemsAdded.isNotEmpty) {
+      final totalItems = itemsAdded.length;
+      final totalQuantity = itemsAdded
           .where((e) => e.quantityOrRemark is int)
           .fold(0, (sum, item) => sum + (item.quantityOrRemark as int));
 
       String details = "";
-      for (var item in itemsToday) {
+      for (var item in itemsAdded) {
         final quantityInfo = item.quantityOrRemark is int
             ? "Stok masuk: ${item.quantityOrRemark}"
             : "Stok masuk: N/A";
@@ -374,9 +366,9 @@ class _AiPageState extends State<AiPage> {
             "- **${item.name}** ($quantityInfo) pada ${DateFormat('HH:mm').format(item.createdAt)}\n";
       }
 
-      return "Barang yang masuk hari ini ($totalItems item, total $totalQuantity unit):\n\n$details";
+      return "Barang yang masuk pada **${DateFormat('dd MMMM yyyy').format(date)}** ($totalItems item, total $totalQuantity unit):\n\n$details";
     }
-    return "Tidak ada barang yang masuk hari ini.";
+    return "Tidak ada barang yang masuk pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
   }
 
   Future<String> _handleItemsTakenQuery(DateTime date) async {
@@ -493,7 +485,7 @@ class _AiPageState extends State<AiPage> {
               : "Stok tidak ditemukan.";
 
           logOutput +=
-              "• **$itemName** diambil oleh **$userName** ($quantity unit) pada $formattedDate.\n  - $stockInfo\n\n";
+              "• **$itemName** diambil oleh **$userName** ($quantity unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
         return logOutput;
       }
