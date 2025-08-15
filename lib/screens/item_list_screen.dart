@@ -975,8 +975,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
                       return;
                     }
                     if (hasClassificationEdit &&
-                        (selectedClassification == null ||
-                            selectedClassification!.isEmpty)) {
+                        selectedClassification == null) {
                       _showNotification('Input Tidak Lengkap',
                           'Klasifikasi tidak boleh kosong.',
                           isError: true);
@@ -1200,8 +1199,9 @@ class _ItemListScreenState extends State<ItemListScreen> {
                   final difference = item.expiryDate!.difference(now);
                   final differenceInMonths = difference.inDays / 30.44;
 
-                  if (item.expiryDate!.isBefore(now) ||
-                      differenceInMonths <= 5) {
+                  if (item.expiryDate!.isBefore(now)) {
+                    iconColor = Colors.red;
+                  } else if (differenceInMonths <= 5) {
                     iconColor = Colors.red;
                   } else if (differenceInMonths <= 6) {
                     iconColor = Colors.yellow;
@@ -1273,14 +1273,12 @@ class _ItemListScreenState extends State<ItemListScreen> {
       body: GestureDetector(
         onHorizontalDragEnd: (details) {
           if (details.primaryVelocity! > 0) {
-            // Drag to the right
             if (_isGroupView) {
               setState(() {
                 _isGroupView = false;
               });
             }
           } else if (details.primaryVelocity! < 0) {
-            // Drag to the left
             if (!_isGroupView) {
               setState(() {
                 _isGroupView = true;
@@ -1386,35 +1384,68 @@ class _ItemListScreenState extends State<ItemListScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Daftar Barang Inventaris:',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 18)),
-                      if (_isGroupView)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            ElevatedButton.icon(
+                      const Text(
+                        'Daftar Barang Inventaris:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 18),
+                      ),
+                      const Spacer(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                                _isGroupView ? Icons.list : Icons.folder_open,
+                                color:
+                                    _isGroupView ? Colors.blue : Colors.blue),
+                            onPressed: () {
+                              setState(() {
+                                _isGroupView = !_isGroupView;
+                                _expiryFilter = 'Semua Item';
+                                _stockFilter = 'Semua Item';
+                                _classificationFilter = 'Semua Item';
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (_isGroupView)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
                               onPressed: () =>
                                   _showMassClassificationDialog(context),
                               icon: const Icon(Icons.playlist_add),
                               label: const Text('Klasifikasi Massal'),
                               style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.teal,
-                                  foregroundColor: Colors.white),
+                                  foregroundColor: Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12)),
                             ),
-                            const SizedBox(width: 8),
-                            ElevatedButton.icon(
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
                               onPressed: _manageClassifications,
                               icon: const Icon(Icons.tune),
                               label: const Text('Kelola Klasifikasi'),
                               style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blueAccent,
-                                  foregroundColor: Colors.white),
+                                  foregroundColor: Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12)),
                             ),
-                          ],
-                        ),
-                    ],
-                  ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 10),
                   if (!_isGroupView)
                     SingleChildScrollView(
@@ -1525,44 +1556,6 @@ class _ItemListScreenState extends State<ItemListScreen> {
                       ),
                     ),
                   const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.list, color: Colors.blue),
-                        onPressed: () {
-                          if (mounted) {
-                            setState(() {
-                              _isGroupView = false;
-                            });
-                          }
-                        },
-                      ),
-                      Switch(
-                        value: _isGroupView,
-                        onChanged: (value) {
-                          if (mounted) {
-                            setState(() {
-                              _isGroupView = value;
-                              _expiryFilter = 'Semua Item';
-                              _stockFilter = 'Semua Item';
-                              _classificationFilter = 'Semua Item';
-                            });
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.folder_open, color: Colors.blue),
-                        onPressed: () {
-                          if (mounted) {
-                            setState(() {
-                              _isGroupView = true;
-                            });
-                          }
-                        },
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -1571,13 +1564,16 @@ class _ItemListScreenState extends State<ItemListScreen> {
                 stream:
                     _firestore.collection('items').orderBy('name').snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.hasError)
+                  if (snapshot.hasError) {
                     return Center(child: Text('Error: ${snapshot.error}'));
-                  if (snapshot.connectionState == ConnectionState.waiting)
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty)
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                     return const Center(
                         child: Text('Belum ada barang di inventaris.'));
+                  }
 
                   List<Item> allItems = snapshot.data!.docs
                       .map((doc) => Item.fromFirestore(
@@ -1598,22 +1594,31 @@ class _ItemListScreenState extends State<ItemListScreen> {
                   } else {
                     List<Item> filteredItems = allItems.where((item) {
                       final String lowerCaseQuery = _searchQuery.toLowerCase();
-                      bool matchesSearch = item.name
-                              .toLowerCase()
-                              .contains(lowerCaseQuery) ||
-                          item.barcode.toLowerCase().contains(lowerCaseQuery);
-                      if (!matchesSearch) return false;
 
-                      if (_classificationFilter != 'Semua Item') {
-                        if (item.classification != _classificationFilter)
-                          return false;
+                      if (!item.name.toLowerCase().contains(lowerCaseQuery) &&
+                          !item.barcode
+                              .toLowerCase()
+                              .contains(lowerCaseQuery)) {
+                        return false;
                       }
 
-                      if (_stockFilter == 'Stok Habis')
+                      if (_classificationFilter != 'Semua Item' &&
+                          item.classification != _classificationFilter) {
+                        return false;
+                      }
+
+                      if (_stockFilter == 'Stok Habis') {
                         return item.quantityOrRemark is int &&
                             item.quantityOrRemark == 0;
-                      if (_expiryFilter == 'Semua Item') return true;
-                      if (item.expiryDate == null) return false;
+                      }
+
+                      if (_expiryFilter == 'Semua Item') {
+                        return true;
+                      }
+
+                      if (item.expiryDate == null) {
+                        return false;
+                      }
 
                       final now = DateTime.now();
                       final difference = item.expiryDate!.difference(now);
@@ -1621,15 +1626,24 @@ class _ItemListScreenState extends State<ItemListScreen> {
 
                       if (_expiryFilter == '1 Tahun' &&
                           differenceInMonths > 6 &&
-                          differenceInMonths <= 12) return true;
+                          differenceInMonths <= 12) {
+                        return true;
+                      }
                       if (_expiryFilter == '6 Bulan' &&
                           differenceInMonths > 5 &&
-                          differenceInMonths <= 6) return true;
+                          differenceInMonths <= 6) {
+                        return true;
+                      }
                       if (_expiryFilter == '5 Bulan' &&
                           differenceInMonths > 0 &&
-                          differenceInMonths <= 5) return true;
+                          differenceInMonths <= 5) {
+                        return true;
+                      }
                       if (_expiryFilter == 'Expired' &&
-                          item.expiryDate!.isBefore(now)) return true;
+                          item.expiryDate!.isBefore(now)) {
+                        return true;
+                      }
+
                       return false;
                     }).toList();
                     return _buildProductListView(filteredItems);

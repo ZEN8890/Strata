@@ -1,15 +1,15 @@
+// Path: lib/screens/admin_dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:Strata_lite/screens/add_item_screen.dart';
 import 'package:Strata_lite/screens/item_list_screen.dart';
 import 'package:Strata_lite/screens/time_log_screen.dart';
 import 'package:Strata_lite/screens/take_item_screen.dart';
 import 'package:Strata_lite/screens/settings_screen.dart';
-import 'package:Strata_lite/screens/users_screen.dart'; // <--- Import UsersScreen
+import 'package:Strata_lite/screens/users_screen.dart';
+import 'package:Strata_lite/screens/ai_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:developer';
-
-// Import the LoginScreen to navigate to it correctly
 import 'package:Strata_lite/screens/login_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -37,8 +37,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     const TimeLogScreen(),
     const SettingsScreen(),
     const TakeItemScreen(),
-    const UsersScreen(), // <--- Tambahkan UsersScreen di sini (indeks 6)
+    const UsersScreen(),
+    const AiPage(),
   ];
+
+  final List<String> _pageTitles = [
+    'Manajemen Barang',
+    'Tambah Barang Baru',
+    'Impor/Ekspor Data',
+    'Log Pengambilan Barang',
+    'Pengaturan',
+    'Ambil Barang',
+    'Manajemen Pengguna',
+    'AI Asisten Inventaris',
+  ];
+
+  String get _currentTitle => _pageTitles[_selectedIndex];
 
   @override
   void initState() {
@@ -133,38 +147,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
 
     if (confirm == true) {
-      // Perform Firebase logout
       await FirebaseAuth.instance.signOut();
       if (!context.mounted) return;
 
-      // Navigate to LoginScreen and remove all previous routes from the stack
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const LoginScreen()),
-        (Route<dynamic> route) =>
-            false, // This predicate ensures all routes are removed
+        (Route<dynamic> route) => false,
       );
-      // Optional: show a notification if desired
-      // _showNotification('Logout Berhasil', 'Anda telah berhasil keluar.', isError: false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    bool isAiPage = _selectedIndex == 7;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard Admin Strata Lite'),
-        // --- START CHANGES HERE ---
-        // Hapus atau komentari bagian 'actions' berikut ini
-        /*
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _confirmLogout,
+        title: Text(
+          _currentTitle,
+          style: TextStyle(
+            color: isAiPage ? Colors.white : Colors.black,
           ),
-        ],
-        */
-        // --- END CHANGES HERE ---
+        ),
+        backgroundColor: isAiPage ? Colors.indigo : Colors.white,
       ),
       drawer: Drawer(
         child: ListView(
@@ -220,6 +225,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _onItemTapped(0);
                 Navigator.pop(context);
               },
+              selected: _selectedIndex == 0,
             ),
             ListTile(
               leading: const Icon(Icons.add_box),
@@ -228,6 +234,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _onItemTapped(1);
                 Navigator.pop(context);
               },
+              selected: _selectedIndex == 1,
             ),
             ListTile(
               leading: const Icon(Icons.history),
@@ -236,6 +243,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _onItemTapped(3);
                 Navigator.pop(context);
               },
+              selected: _selectedIndex == 3,
             ),
             ListTile(
               leading: const Icon(Icons.shopping_cart),
@@ -244,16 +252,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _onItemTapped(5);
                 Navigator.pop(context);
               },
+              selected: _selectedIndex == 5,
             ),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.group), // <--- Icon untuk halaman Users
-              title: const Text(
-                  'Manajemen Pengguna'), // <--- Nama menu untuk Users
+              leading: const Icon(Icons.group),
+              title: const Text('Manajemen Pengguna'),
               onTap: () {
-                _onItemTapped(6); // <--- Indeks 6 untuk UsersScreen
+                _onItemTapped(6);
                 Navigator.pop(context);
               },
+              selected: _selectedIndex == 6,
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('AI Asisten Inventaris'),
+              onTap: () {
+                _onItemTapped(7);
+                Navigator.pop(context);
+              },
+              selected: _selectedIndex == 7,
             ),
             ListTile(
               leading: const Icon(Icons.settings),
@@ -262,6 +280,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 _onItemTapped(4);
                 Navigator.pop(context);
               },
+              selected: _selectedIndex == 4,
             ),
             ListTile(
               leading: const Icon(Icons.logout),
