@@ -7,6 +7,7 @@ import 'package:Strata_lite/screens/take_item_screen.dart';
 import 'package:Strata_lite/screens/settings_screen.dart';
 import 'package:Strata_lite/screens/users_screen.dart';
 import 'package:Strata_lite/screens/ai_page.dart';
+import 'package:Strata_lite/screens/credit_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:developer';
@@ -39,6 +40,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     const TakeItemScreen(),
     const UsersScreen(),
     const AiPage(),
+    const CreditPage(),
   ];
 
   final List<String> _pageTitles = [
@@ -50,6 +52,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     'Ambil Barang',
     'Manajemen Pengguna',
     'AI Asisten Inventaris',
+    'Tentang Aplikasi',
   ];
 
   String get _currentTitle => _pageTitles[_selectedIndex];
@@ -124,6 +127,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     setState(() {
       _selectedIndex = index;
     });
+    Navigator.pop(context);
   }
 
   Future<void> _confirmLogout() async {
@@ -159,17 +163,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool isAiPage = _selectedIndex == 7;
+    bool isAiOrCreditPage = _selectedIndex == 7 || _selectedIndex == 8;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
           _currentTitle,
           style: TextStyle(
-            color: isAiPage ? Colors.white : Colors.black,
+            color: isAiOrCreditPage ? Colors.white : Colors.black,
           ),
         ),
-        backgroundColor: isAiPage ? Colors.indigo : Colors.white,
+        backgroundColor: isAiOrCreditPage ? Colors.indigo : Colors.white,
       ),
       drawer: Drawer(
         child: ListView(
@@ -221,65 +225,50 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ListTile(
               leading: const Icon(Icons.inventory),
               title: const Text('Manajemen Barang'),
-              onTap: () {
-                _onItemTapped(0);
-                Navigator.pop(context);
-              },
+              onTap: () => _onItemTapped(0),
               selected: _selectedIndex == 0,
             ),
             ListTile(
               leading: const Icon(Icons.add_box),
               title: const Text('Tambah Barang Baru'),
-              onTap: () {
-                _onItemTapped(1);
-                Navigator.pop(context);
-              },
+              onTap: () => _onItemTapped(1),
               selected: _selectedIndex == 1,
             ),
             ListTile(
               leading: const Icon(Icons.history),
               title: const Text('Log Pengambilan Barang'),
-              onTap: () {
-                _onItemTapped(3);
-                Navigator.pop(context);
-              },
+              onTap: () => _onItemTapped(3),
               selected: _selectedIndex == 3,
             ),
             ListTile(
               leading: const Icon(Icons.shopping_cart),
               title: const Text('Ambil Barang'),
-              onTap: () {
-                _onItemTapped(5);
-                Navigator.pop(context);
-              },
+              onTap: () => _onItemTapped(5),
               selected: _selectedIndex == 5,
             ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.group),
               title: const Text('Manajemen Pengguna'),
-              onTap: () {
-                _onItemTapped(6);
-                Navigator.pop(context);
-              },
+              onTap: () => _onItemTapped(6),
               selected: _selectedIndex == 6,
             ),
             ListTile(
               leading: const Icon(Icons.auto_awesome),
               title: const Text('AI Asisten Inventaris'),
-              onTap: () {
-                _onItemTapped(7);
-                Navigator.pop(context);
-              },
+              onTap: () => _onItemTapped(7),
               selected: _selectedIndex == 7,
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Tentang Aplikasi'),
+              onTap: () => _onItemTapped(8),
+              selected: _selectedIndex == 8,
             ),
             ListTile(
               leading: const Icon(Icons.settings),
               title: const Text('Pengaturan'),
-              onTap: () {
-                _onItemTapped(4);
-                Navigator.pop(context);
-              },
+              onTap: () => _onItemTapped(4),
               selected: _selectedIndex == 4,
             ),
             ListTile(

@@ -24,6 +24,29 @@ class _AiPageState extends State<AiPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isSending = false;
 
+  final Map<String, String> _commandMap = {
+    'masuk': 'itemsAddedToday',
+    'keluar': 'itemsTakenToday',
+    'ambil': 'itemsTakenToday',
+    'diambil': 'itemsTakenToday',
+    'stok rendah': 'lowStock',
+    'stok sedikit': 'lowStock',
+    'paling sering diambil': 'mostTaken',
+    'siapa yang mengambil': 'whoTookItems',
+    'siapa yang ambil': 'whoTookItems',
+    'item list': 'availableItems',
+    'apa saja yang tersedia': 'availableItems',
+    'stok barang': 'itemStock',
+    'cek stok': 'itemStock',
+    'berapa stok': 'itemStock',
+    'sisa stok': 'itemStock',
+    'akan kedaluwarsa': 'expiringSoon',
+    'barang kedaluwarsa': 'expiringSoon',
+    'barang expired': 'expiringSoon',
+    'staf paling aktif': 'mostActiveStaff',
+    'siapa staf paling aktif ambil barang': 'mostActiveStaff',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -39,26 +62,28 @@ class _AiPageState extends State<AiPage> {
     super.dispose();
   }
 
-  /// Menampilkan daftar perintah awal kepada pengguna.
   void _showInitialCommands() {
     setState(() {
       _messages.clear();
       _messages.add({
         'sender': 'bot',
         'text':
-            'Hai! 👋 Saya Nevets, AI personal Anda yang siap membantu cek inventaris dengan mudah! 😉 Berikut list yang bisa saya lakukan:\n\n' +
-                '• Barang apa saja yang masuk hari ini?\n' +
-                '• Barang yang keluar hari ini?\n' +
-                '• Item dengan stok rendah\n' +
-                '• Barang yang paling sering diambil\n' +
-                '• Siapa yang mengambil barang hari ini/tanggal tertentu?\n' +
-                '• Apa saja yang tersedia\n'
+            'Hai! 👋 Saya Nevets, AI personal Anda yang siap membantu cek inventaris dengan mudah! 😉\n\n'
+                'Berikut list yang bisa saya lakukan:\n\n'
+                '• Barang apa saja yang masuk hari ini?\n'
+                '• Barang yang keluar hari ini/tanggal tertentu?\n'
+                '• Item dengan stok rendah\n'
+                '• Barang yang paling sering diambil\n'
+                '• Siapa yang mengambil barang hari ini/tanggal tertentu?\n'
+                '• Item List\n'
+                '• Berapa stok [nama barang]?\n'
+                '• Barang apa yang akan kedaluwarsa?\n'
+                '• Siapa staf paling aktif ambil barang?'
       });
     });
     _scrollToBottom();
   }
 
-  /// Memeriksa item dengan stok rendah dan menampilkan peringatan.
   Future<void> _checkLowStockAlert() async {
     final lowStockItems = await _fetchLowStockItems();
     if (lowStockItems.isNotEmpty) {
@@ -74,7 +99,6 @@ class _AiPageState extends State<AiPage> {
     }
   }
 
-  /// Mengambil semua item dari Firestore.
   Future<List<Item>> _fetchAllItems() async {
     try {
       final snapshot =
@@ -88,7 +112,6 @@ class _AiPageState extends State<AiPage> {
     }
   }
 
-  /// Mengambil item dengan stok kurang dari 10.
   Future<List<Item>> _fetchLowStockItems() async {
     try {
       final snapshot = await _firestore
@@ -105,7 +128,6 @@ class _AiPageState extends State<AiPage> {
     }
   }
 
-  /// Mengidentifikasi tanggal dari kueri pengguna
   DateTime? _parseDateFromQuery(String query) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -131,7 +153,6 @@ class _AiPageState extends State<AiPage> {
       return lastMonth;
     }
 
-    // Regex untuk format 'DD MMMM'
     final dateRegex = RegExp(
         r'(\d{1,2})\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)');
     final match = dateRegex.firstMatch(queryLower);
@@ -160,7 +181,59 @@ class _AiPageState extends State<AiPage> {
     return null;
   }
 
-  /// Memproses kueri pengguna dan menghasilkan respons.
+  int _calculateLevenshteinDistance(String a, String b) {
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+
+    List<int> v0 = List<int>.filled(b.length + 1, 0);
+    List<int> v1 = List<int>.filled(b.length + 1, 0);
+
+    for (int i = 0; i < v0.length; i++) {
+      v0[i] = i;
+    }
+
+    for (int i = 0; i < a.length; i++) {
+      v1[0] = i + 1;
+      for (int j = 0; j < b.length; j++) {
+        int cost = (a[i] == b[j]) ? 0 : 1;
+        v1[j + 1] = [v1[j] + 1, v0[j + 1] + 1, v0[j] + cost]
+            .reduce((min, current) => min < current ? min : current);
+      }
+      for (int j = 0; j < v0.length; j++) {
+        v0[j] = v1[j];
+      }
+    }
+    return v1[b.length];
+  }
+
+  String? _findBestMatch(String query, List<String> targets,
+      {double threshold = 0.5}) {
+    String lowerQuery = query.toLowerCase();
+    String? bestMatch;
+    double highestScore = 0;
+
+    if (lowerQuery.isEmpty) return null;
+
+    for (var target in targets) {
+      String lowerTarget = target.toLowerCase();
+      int distance = _calculateLevenshteinDistance(lowerQuery, lowerTarget);
+      double similarity = 1.0 - (distance / lowerQuery.length);
+
+      // Tingkatkan akurasi dengan memberikan bobot lebih pada kecocokan di awal kata
+      double score = similarity;
+      if (lowerTarget.startsWith(lowerQuery)) {
+        score += 0.5; // Beri bonus skor untuk kecocokan awal yang kuat
+      }
+
+      if (score > highestScore && score > threshold) {
+        highestScore = score;
+        bestMatch = target;
+      }
+    }
+
+    return bestMatch;
+  }
+
   Future<void> _processQuery(String query) async {
     final message = query.trim();
     if (message.isEmpty || _isSending) return;
@@ -177,7 +250,6 @@ class _AiPageState extends State<AiPage> {
     String result =
         "Maaf, saya tidak mengerti pertanyaan Anda. Coba tanyakan pertanyaan lain.";
 
-    // Simpan pesan loading
     final loadingMessageIndex = _messages.length;
     setState(() {
       _messages.add({'sender': 'bot', 'text': '...'});
@@ -187,32 +259,62 @@ class _AiPageState extends State<AiPage> {
     try {
       final allItems = await _fetchAllItems();
       final queryLower = query.toLowerCase();
-      final targetDate = _parseDateFromQuery(queryLower);
 
-      if (queryLower.contains("masuk hari ini") ||
-          queryLower.contains("ditambahkan hari ini")) {
-        result = await _handleItemsAddedTodayQuery(allItems);
-      } else if (queryLower.contains("keluar") ||
-          queryLower.contains("diambil")) {
-        if (targetDate != null) {
-          result = await _handleItemsTakenQuery(targetDate);
-        } else {
-          result = await _handleItemsTakenQuery(DateTime.now());
+      DateTime? targetDate = _parseDateFromQuery(queryLower);
+      String processedQuery = queryLower;
+
+      if (targetDate != null) {
+        final dateWords = [
+          'hari ini',
+          'kemarin',
+          'lusa',
+          'minggu lalu',
+          'bulan lalu'
+        ];
+        for (var dateWord in dateWords) {
+          processedQuery = processedQuery.replaceAll(dateWord, '').trim();
         }
-      } else if (queryLower.contains("stok rendah") ||
-          queryLower.contains("stok sedikit")) {
-        result = await _handleLowStockQuery(allItems);
-      } else if (queryLower.contains("barang yang paling sering diambil")) {
-        result = await _handleMostTakenItemsQuery();
-      } else if (queryLower.contains("siapa yang mengambil") ||
-          queryLower.contains("siapa yang ambil")) {
-        if (targetDate != null) {
-          result = await _handleWhoTookItemsQuery(allItems, targetDate);
-        } else {
-          result = await _handleWhoTookItemsQuery(allItems, DateTime.now());
+      }
+
+      final commandKeys = _commandMap.keys.toList();
+      String? matchedCommand =
+          _findBestMatch(processedQuery, commandKeys, threshold: 0.4);
+
+      if (matchedCommand != null) {
+        switch (_commandMap[matchedCommand]) {
+          case 'itemsAddedToday':
+            result = await _handleItemsAddedTodayQuery(allItems);
+            break;
+          case 'itemsTakenToday':
+            result = await _handleItemsTakenQuery(targetDate ?? DateTime.now());
+            break;
+          case 'lowStock':
+            result = await _handleLowStockQuery(allItems);
+            break;
+          case 'mostTaken':
+            result = await _handleMostTakenItemsQuery();
+            break;
+          case 'whoTookItems':
+            result = await _handleWhoTookItemsQuery(
+                allItems, targetDate ?? DateTime.now());
+            break;
+          case 'availableItems':
+            result = await _handleAvailableItemsQuery(allItems);
+            break;
+          case 'itemStock':
+            result = await _handleItemStockQuery(queryLower);
+            break;
+          case 'expiringSoon':
+            result = await _handleItemsExpiringSoon(allItems);
+            break;
+          case 'mostActiveStaff':
+            result = await _handleMostActiveStaffQuery();
+            break;
+          default:
+            result = "Maaf, saya tidak mengerti pertanyaan Anda.";
         }
-      } else if (queryLower.contains("apa saja yang tersedia")) {
-        result = await _handleAvailableItemsQuery(allItems);
+      } else {
+        result = await _handleItemStockQuery(queryLower);
       }
     } catch (e) {
       log("Error processing query: $e");
@@ -228,7 +330,26 @@ class _AiPageState extends State<AiPage> {
     _focusNode.requestFocus();
   }
 
-  /// Handler untuk pertanyaan "Barang masuk hari ini".
+  Future<String> _handleItemStockQuery(String query) async {
+    final allItems = await _fetchAllItems();
+    final itemNames = allItems.map((e) => e.name).toList();
+    final queryWithoutKeywords = query.replaceAll(
+        RegExp(r'(stok|jumlah|berapa|cek)\s*', caseSensitive: false), '');
+
+    final String? bestMatch =
+        _findBestMatch(queryWithoutKeywords.trim(), itemNames, threshold: 0.6);
+
+    if (bestMatch != null) {
+      final item = allItems.firstWhere((element) => element.name == bestMatch);
+      final stockInfo = item.quantityOrRemark is int
+          ? "Stok saat ini untuk **${item.name}** adalah **${item.quantityOrRemark}** unit."
+          : "Stok untuk **${item.name}** tidak terhitung.";
+      return stockInfo;
+    }
+
+    return "Maaf, saya tidak menemukan barang yang cocok dengan nama tersebut.";
+  }
+
   Future<String> _handleItemsAddedTodayQuery(List<Item> allItems) async {
     final today = DateTime.now();
     final itemsToday = allItems
@@ -258,7 +379,6 @@ class _AiPageState extends State<AiPage> {
     return "Tidak ada barang yang masuk hari ini.";
   }
 
-  /// Handler untuk pertanyaan "Barang keluar hari ini" atau tanggal tertentu.
   Future<String> _handleItemsTakenQuery(DateTime date) async {
     final startOfDate = DateTime(date.year, date.month, date.day);
     final endOfDate = startOfDate
@@ -296,7 +416,6 @@ class _AiPageState extends State<AiPage> {
     return "Tidak ada barang yang keluar pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
   }
 
-  /// Handler untuk pertanyaan "Item dengan stok rendah".
   Future<String> _handleLowStockQuery(List<Item> allItems) async {
     final lowStockItems = allItems
         .where((item) =>
@@ -312,7 +431,6 @@ class _AiPageState extends State<AiPage> {
     return "Tidak ada item dengan stok rendah.";
   }
 
-  /// Handler untuk pertanyaan "Barang yang paling sering diambil".
   Future<String> _handleMostTakenItemsQuery() async {
     final logSnapshot = await _firestore.collection('log_entries').get();
     final itemCounts = <String, int>{};
@@ -338,7 +456,6 @@ class _AiPageState extends State<AiPage> {
     return "Belum ada riwayat pengambilan barang.";
   }
 
-  /// Handler untuk pertanyaan "Siapa yang mengambil barang hari ini?" atau tanggal tertentu.
   Future<String> _handleWhoTookItemsQuery(
       List<Item> allItems, DateTime date) async {
     final startOfDate = DateTime(date.year, date.month, date.day);
@@ -386,7 +503,6 @@ class _AiPageState extends State<AiPage> {
     return "Tidak ada pengambilan barang pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
   }
 
-  /// Handler untuk pertanyaan "Apa saja yang tersedia".
   Future<String> _handleAvailableItemsQuery(List<Item> allItems) async {
     final availableItems = allItems
         .where((item) =>
@@ -406,7 +522,53 @@ class _AiPageState extends State<AiPage> {
     return "Tidak ada item yang tersedia saat ini.";
   }
 
-  /// Menggulir `ListView` ke bawah.
+  Future<String> _handleItemsExpiringSoon(List<Item> allItems) async {
+    final now = DateTime.now();
+    final thirtyDaysFromNow = now.add(const Duration(days: 30));
+
+    final expiringItems = allItems
+        .where((item) =>
+            item.expiryDate != null &&
+            item.expiryDate!.isAfter(now) &&
+            item.expiryDate!.isBefore(thirtyDaysFromNow))
+        .toList();
+
+    if (expiringItems.isNotEmpty) {
+      final itemDetails = expiringItems
+          .map((e) =>
+              "- **${e.name}** (Kedaluwarsa: ${DateFormat('dd MMMM yyyy').format(e.expiryDate!)})")
+          .join("\n");
+      return "⚠️ Berikut adalah item yang akan kedaluwarsa dalam 30 hari ke depan:\n$itemDetails";
+    }
+
+    return "Tidak ada item yang akan kedaluwarsa dalam waktu dekat.";
+  }
+
+  Future<String> _handleMostActiveStaffQuery() async {
+    final logSnapshot = await _firestore.collection('log_entries').get();
+    final staffCounts = <String, int>{};
+    for (var doc in logSnapshot.docs) {
+      final data = doc.data();
+      if (data.containsKey('staffName')) {
+        final staffName = data['staffName'] as String;
+        staffCounts[staffName] = (staffCounts[staffName] ?? 0) + 1;
+      }
+    }
+
+    if (staffCounts.isNotEmpty) {
+      final sortedStaff = staffCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      final topStaff = sortedStaff
+          .take(3)
+          .map((e) => "- **${e.key}** (${e.value} kali pengambilan)")
+          .join("\n");
+
+      return "Berikut adalah 3 staf paling aktif dalam pengambilan barang:\n$topStaff";
+    }
+    return "Belum ada riwayat pengambilan barang.";
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -419,7 +581,6 @@ class _AiPageState extends State<AiPage> {
     });
   }
 
-  /// Menampilkan dialog untuk menyalin teks.
   void _showCopyDialog(String text) {
     showModalBottomSheet(
       context: context,
@@ -440,12 +601,9 @@ class _AiPageState extends State<AiPage> {
     );
   }
 
-  /// Membangun gelembung pesan untuk chat.
   Widget _buildMessageBubble(Map<String, String> msg) {
     final isUser = msg['sender'] == 'user';
-    final bubbleColor = isUser
-        ? Colors.blue[400]
-        : const Color(0xFF282828); // Warna card yang lebih gelap
+    final bubbleColor = isUser ? Colors.blue[400] : const Color(0xFF282828);
     final textColor = isUser ? Colors.white : Colors.white70;
 
     return GestureDetector(
@@ -519,10 +677,9 @@ class _AiPageState extends State<AiPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          const Color(0xFF1E1E1E), // Warna latar belakang yang lebih gelap
+      backgroundColor: const Color(0xFF1E1E1E),
       appBar: AppBar(
-        automaticallyImplyLeading: false, // Menghapus tombol back
+        automaticallyImplyLeading: false,
         title: Center(
           child: AnimatedTextKit(
             animatedTexts: [
@@ -557,7 +714,9 @@ class _AiPageState extends State<AiPage> {
                 'Item dengan stok rendah',
                 'Barang yang paling sering diambil',
                 'Siapa yang mengambil barang hari ini?',
-                'Apa saja yang tersedia'
+                'Item List',
+                'Barang apa yang akan kedaluwarsa?',
+                'Siapa staf paling aktif ambil barang?',
               ];
               showModalBottomSheet(
                 context: context,
@@ -648,7 +807,6 @@ class _AiPageState extends State<AiPage> {
   }
 }
 
-// Tambahkan ekstensi ini untuk memudahkan pencarian
 extension IterableExtension<T> on Iterable<T> {
   T? firstWhereOrNull(bool Function(T) test) {
     for (var element in this) {
@@ -656,6 +814,12 @@ extension IterableExtension<T> on Iterable<T> {
         return element;
       }
     }
+    return null;
+  }
+}
+
+extension on Item {
+  DateTime? get expiryDate {
     return null;
   }
 }

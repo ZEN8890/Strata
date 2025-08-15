@@ -379,10 +379,6 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
               )
             : ListView(
                 children: [
-                  Text(
-                    'Pengambilan Barang',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: _barcodeController,

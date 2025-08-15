@@ -341,10 +341,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
               key: _formKey,
               child: ListView(
                 children: [
-                  Text(
-                    'Tambah Barang Baru',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: _nameController,

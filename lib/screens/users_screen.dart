@@ -783,17 +783,8 @@ class _UsersScreenState extends State<UsersScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Text(
-                  'Daftar Pengguna Terdaftar:',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 18),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-              const SizedBox(width: 10),
               ElevatedButton.icon(
+                // Tombol "Tambah Pengguna" digeser ke kiri
                 onPressed: () => _addEditUser(),
                 icon: const Icon(Icons.person_add),
                 label: const Text('Tambah Pengguna'),
@@ -804,6 +795,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       borderRadius: BorderRadius.circular(8)),
                 ),
               ),
+              const SizedBox(width: 10),
               const SizedBox(width: 10),
               IconButton(
                 icon: const Icon(Icons.more_vert),
