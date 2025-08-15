@@ -5,41 +5,41 @@ class Item {
   String? id;
   final String name;
   final String barcode;
-  final dynamic
-      quantityOrRemark; // Reverted to dynamic to handle both int (quantity) and String (remarks)
+  final dynamic quantityOrRemark;
   final DateTime createdAt;
   final DateTime? expiryDate;
+  final String? classification;
 
   Item({
     this.id,
     required this.name,
     required this.barcode,
-    required this.quantityOrRemark, // Reverted to dynamic
+    required this.quantityOrRemark,
     required this.createdAt,
     this.expiryDate,
+    this.classification,
   });
 
-  // Factory constructor from Firestore document
   factory Item.fromFirestore(Map<String, dynamic> firestoreData, String docId) {
     return Item(
       id: docId,
       name: firestoreData['name'] ?? '',
       barcode: firestoreData['barcode'] ?? '',
-      quantityOrRemark:
-          firestoreData['quantityOrRemark'], // Reverted to dynamic
+      quantityOrRemark: firestoreData['quantityOrRemark'],
       createdAt: (firestoreData['createdAt'] as Timestamp).toDate(),
       expiryDate: (firestoreData['expiryDate'] as Timestamp?)?.toDate(),
+      classification: firestoreData['classification'],
     );
   }
 
-  // Method to convert Item object to a map for Firestore
   Map<String, dynamic> toFirestore() {
     return {
       'name': name,
       'barcode': barcode,
-      'quantityOrRemark': quantityOrRemark, // Reverted to dynamic
+      'quantityOrRemark': quantityOrRemark,
       'createdAt': createdAt,
       'expiryDate': expiryDate,
+      'classification': classification,
     };
   }
 }

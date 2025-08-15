@@ -43,7 +43,7 @@ class _UsersScreenState extends State<UsersScreen> {
     'Security',
     'IT'
   ];
-  final List<String> _roles = ['staff', 'admin'];
+  final List<String> _roles = ['staff', 'supervisor', 'admin'];
 
   @override
   void initState() {
@@ -605,10 +605,10 @@ class _UsersScreenState extends State<UsersScreen> {
             await _auth.signInWithEmailAndPassword(
                 email: currentAdminEmail!, password: adminPassword);
           } on FirebaseAuthException catch (e) {
-            log('Gagal mengimpor ${email} (Auth Error): ${e.message}');
+            log('Gagal mengimpor $email (Auth Error): ${e.message}');
             failedCount++;
           } catch (e) {
-            log('Gagal mengimpor ${email} (General Error): $e');
+            log('Gagal mengimpor $email (General Error): $e');
             failedCount++;
           }
         }
@@ -872,6 +872,21 @@ class _UsersScreenState extends State<UsersScreen> {
                   final String department = userData['department'] ?? 'N/A';
                   final String role = userData['role'] ?? 'N/A';
 
+                  Color roleColor;
+                  switch (role) {
+                    case 'admin':
+                      roleColor = Colors.red[700]!;
+                      break;
+                    case 'supervisor':
+                      roleColor = Colors.orange[700]!;
+                      break;
+                    case 'staff':
+                      roleColor = Colors.blue[700]!;
+                      break;
+                    default:
+                      roleColor = Colors.grey;
+                  }
+
                   return Card(
                     margin:
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -881,9 +896,9 @@ class _UsersScreenState extends State<UsersScreen> {
                     child: ListTile(
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 10),
-                      leading: const CircleAvatar(
-                        backgroundColor: Colors.blueAccent,
-                        child: Icon(Icons.person, color: Colors.white),
+                      leading: CircleAvatar(
+                        backgroundColor: roleColor,
+                        child: const Icon(Icons.person, color: Colors.white),
                       ),
                       title: Text(
                         name,
@@ -906,9 +921,7 @@ class _UsersScreenState extends State<UsersScreen> {
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: role == 'admin'
-                                    ? Colors.red[700]
-                                    : Colors.blue[700],
+                                color: roleColor,
                               )),
                         ],
                       ),

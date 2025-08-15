@@ -1,7 +1,11 @@
+// Path: lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
 import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Cloud Firestore to read user roles
+import 'package:Strata_lite/screens/admin_dashboard_screen.dart'; // Import AdminDashboardScreen
+import 'package:Strata_lite/screens/supervisor_dashboard_screen.dart'; // Import SupervisorDashboardScreen
+import 'package:Strata_lite/screens/staff_dashboard_screen.dart'; // Assuming you have a staff dashboard
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -74,46 +78,66 @@ class _LoginScreenState extends State<LoginScreen> {
       User? user = userCredential.user;
 
       if (user != null) {
-        // Simpan email jika "Remember Me" dicentang
         _saveRememberedEmail(email);
 
-        // --- UPDATED LOGIC FOR USER ROLE HANDLING (from previous solution) ---
-        if (!context.mounted) return; // Check context before async operations
+        if (!context.mounted) return;
 
         try {
           DocumentSnapshot userDoc =
               await _firestore.collection('users').doc(user.uid).get();
-          if (userDoc.exists) {
-            String role = (userDoc.data() as Map<String, dynamic>)['role'] ??
-                'staff'; // Default ke staff jika role tidak ada
-            if (role == 'admin') {
-              _showMessage('Login Berhasil sebagai Admin: ${user.email}!');
-              if (!context.mounted) return;
-              Navigator.pushReplacementNamed(context, '/admin_dashboard');
-            } else {
-              _showMessage(
-                  'Login Berhasil sebagai Pengguna Biasa (Staff): ${user.email}!');
-              if (!context.mounted) return;
-              Navigator.pushReplacementNamed(context, '/staff_dashboard');
-            }
-          } else {
-            // If user document not found, default to staff dashboard and show a warning
+          if (!userDoc.exists) {
             _showMessage(
                 'Login Berhasil, tetapi data profil tidak lengkap. Anda dialihkan ke dasbor staff.');
             if (!context.mounted) return;
-            Navigator.pushReplacementNamed(context, '/staff_dashboard');
-            print(
-                'Warning: User document not found for UID: ${user.uid} during login, defaulting to staff dashboard.');
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                  builder: (context) => const StaffDashboardScreen()),
+              (Route<dynamic> route) => false,
+            );
+            return;
+          }
+
+          String role =
+              (userDoc.data() as Map<String, dynamic>)['role'] ?? 'staff';
+
+          if (role == 'admin') {
+            _showMessage('Login Berhasil sebagai Admin: ${user.email}!');
+            if (!context.mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                  builder: (context) => const AdminDashboardScreen()),
+              (Route<dynamic> route) => false,
+            );
+          } else if (role == 'supervisor') {
+            _showMessage('Login Berhasil sebagai Supervisor: ${user.email}!');
+            if (!context.mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                  builder: (context) => const SupervisorDashboardScreen()),
+              (Route<dynamic> route) => false,
+            );
+          } else {
+            // Default to staff for any other or missing roles
+            _showMessage(
+                'Login Berhasil sebagai Pengguna Biasa (Staff): ${user.email}!');
+            if (!context.mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                  builder: (context) => const StaffDashboardScreen()),
+              (Route<dynamic> route) => false,
+            );
           }
         } catch (e) {
           _showMessage(
               'Error saat mengambil peran pengguna: $e. Dialihkan ke dasbor staff.');
           if (!context.mounted) return;
-          Navigator.pushReplacementNamed(
-              context, '/staff_dashboard'); // Fallback if error fetching role
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+                builder: (context) => const StaffDashboardScreen()),
+            (Route<dynamic> route) => false,
+          );
           print('Error fetching user role during login: $e');
         }
-        // --- END UPDATED LOGIC ---
       } else {
         _showMessage('Login Gagal: Pengguna tidak ditemukan.');
       }
@@ -180,12 +204,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   obscureText:
                       _obscurePassword, // Controlled by _obscurePassword state
                   decoration: InputDecoration(
-                    // Use InputDecoration for suffixIcon
                     labelText: 'Password',
                     border: const OutlineInputBorder(),
                     prefixIcon: const Icon(Icons.lock),
                     suffixIcon: IconButton(
-                      // Add toggle button for password visibility
                       icon: Icon(
                         _obscurePassword
                             ? Icons.visibility

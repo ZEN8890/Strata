@@ -24,13 +24,19 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final TextEditingController _expiryDateController = TextEditingController();
 
   MobileScannerController? _scannerController;
-  bool _isQuantityBased = true; // Added the switch state back
+  bool _isQuantityBased = true;
   bool _isScanning = false;
   DateTime? _selectedExpiryDate;
+  String? _selectedClassification;
+
+  // State baru untuk toggle
+  bool _hasExpiryDate = false;
+  bool _hasClassification = true;
 
   Timer? _notificationTimer;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<String> _classifications = [];
 
   @override
   void initState() {
@@ -39,6 +45,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
     );
+    _fetchClassifications();
   }
 
   @override
@@ -51,6 +58,26 @@ class _AddItemScreenState extends State<AddItemScreen> {
     _scannerController?.dispose();
     _notificationTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _fetchClassifications() async {
+    try {
+      final doc =
+          await _firestore.collection('config').doc('classifications').get();
+      if (doc.exists) {
+        final data = doc.data();
+        if (data != null && data['list'] is List) {
+          if (mounted) {
+            setState(() {
+              _classifications = List<String>.from(data['list']);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      log('Error fetching classifications: $e');
+      _showNotification('Error', 'Gagal memuat klasifikasi. $e', isError: true);
+    }
   }
 
   void _showNotification(String title, String message, {bool isError = false}) {
@@ -131,11 +158,20 @@ class _AddItemScreenState extends State<AddItemScreen> {
       return;
     }
 
-    if (_selectedExpiryDate == null) {
-      _showNotification(
-          'Tanggal Kedaluwarsa Kosong', 'Harap pilih tanggal kedaluwarsa.',
+    if (_hasClassification &&
+        (_selectedClassification == null || _selectedClassification!.isEmpty)) {
+      _showNotification('Klasifikasi Kosong', 'Harap pilih klasifikasi item.',
           isError: true);
       return;
+    }
+
+    if (_hasExpiryDate && _selectedExpiryDate != null) {
+      if (_selectedExpiryDate!.isBefore(DateTime.now())) {
+        _showNotification('Tanggal Kedaluwarsa Invalid',
+            'Tanggal kedaluwarsa tidak boleh di masa lalu.',
+            isError: true);
+        return;
+      }
     }
 
     try {
@@ -158,10 +194,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
       Item newItem = Item(
         name: itemName,
         barcode: barcode,
-        quantityOrRemark:
-            quantityOrRemark, // Reverted to using quantityOrRemark
+        quantityOrRemark: quantityOrRemark,
         createdAt: DateTime.now(),
-        expiryDate: _selectedExpiryDate,
+        expiryDate: _hasExpiryDate ? _selectedExpiryDate : null,
+        classification: _hasClassification ? _selectedClassification : null,
       );
 
       await _firestore.collection('items').add(newItem.toFirestore());
@@ -172,15 +208,20 @@ class _AddItemScreenState extends State<AddItemScreen> {
       log('Item added: Name: $itemName, Barcode: $barcode, Type: ${_isQuantityBased ? "Quantity" : "Remark"}, Value: $quantityOrRemark');
 
       FocusScope.of(context).unfocus();
-      setState(() {
-        _nameController.clear();
-        _barcodeController.clear();
-        _quantityController.clear();
-        _remarkController.clear();
-        _expiryDateController.clear();
-        _selectedExpiryDate = null;
-        _isQuantityBased = true;
-      });
+      if (mounted) {
+        setState(() {
+          _nameController.clear();
+          _barcodeController.clear();
+          _quantityController.clear();
+          _remarkController.clear();
+          _expiryDateController.clear();
+          _selectedExpiryDate = null;
+          _isQuantityBased = true;
+          _selectedClassification = null;
+          _hasExpiryDate = false;
+          _hasClassification = true;
+        });
+      }
     } catch (e) {
       _showNotification(
           'Gagal Menambahkan Barang', 'Gagal menambahkan barang: $e',
@@ -197,11 +238,13 @@ class _AddItemScreenState extends State<AddItemScreen> {
       lastDate: DateTime(2101),
     );
     if (pickedDate != null && pickedDate != _selectedExpiryDate) {
-      setState(() {
-        _selectedExpiryDate = pickedDate;
-        _expiryDateController.text =
-            DateFormat('dd-MM-yyyy').format(pickedDate);
-      });
+      if (mounted) {
+        setState(() {
+          _selectedExpiryDate = pickedDate;
+          _expiryDateController.text =
+              DateFormat('dd-MM-yyyy').format(pickedDate);
+        });
+      }
     }
   }
 
@@ -341,6 +384,48 @@ class _AddItemScreenState extends State<AddItemScreen> {
                   const SizedBox(height: 15),
                   Row(
                     children: [
+                      const Text('Punya Klasifikasi?'),
+                      Switch(
+                        value: _hasClassification,
+                        onChanged: (bool value) {
+                          setState(() {
+                            _hasClassification = value;
+                            if (!value) {
+                              _selectedClassification = null;
+                            }
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  if (_hasClassification)
+                    DropdownButtonFormField<String>(
+                      value: _selectedClassification,
+                      decoration: const InputDecoration(
+                        labelText: 'Klasifikasi Item',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _classifications.map((String classification) {
+                        return DropdownMenuItem<String>(
+                          value: classification,
+                          child: Text(classification),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedClassification = newValue;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Klasifikasi tidak boleh kosong';
+                        }
+                        return null;
+                      },
+                    ),
+                  const SizedBox(height: 15),
+                  Row(
+                    children: [
                       const Text('Item Berbasis Kuantitas?'),
                       Switch(
                         value: _isQuantityBased,
@@ -388,23 +473,41 @@ class _AddItemScreenState extends State<AddItemScreen> {
                       },
                     ),
                   const SizedBox(height: 15),
-                  TextFormField(
-                    controller: _expiryDateController,
-                    decoration: const InputDecoration(
-                      labelText: 'Expiry Date',
-                      hintText: 'dd-MM-yyyy',
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.calendar_today),
-                    ),
-                    readOnly: true,
-                    onTap: () => _selectExpiryDate(context),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Expiry Date tidak boleh kosong';
-                      }
-                      return null;
-                    },
+                  Row(
+                    children: [
+                      const Text('Punya Expiry Date?'),
+                      Switch(
+                        value: _hasExpiryDate,
+                        onChanged: (bool value) {
+                          setState(() {
+                            _hasExpiryDate = value;
+                            if (!value) {
+                              _selectedExpiryDate = null;
+                              _expiryDateController.clear();
+                            }
+                          });
+                        },
+                      ),
+                    ],
                   ),
+                  if (_hasExpiryDate)
+                    TextFormField(
+                      controller: _expiryDateController,
+                      decoration: const InputDecoration(
+                        labelText: 'Expiry Date',
+                        hintText: 'dd-MM-yyyy',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.calendar_today),
+                      ),
+                      readOnly: true,
+                      onTap: () => _selectExpiryDate(context),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Tanggal kedaluwarsa tidak boleh kosong';
+                        }
+                        return null;
+                      },
+                    ),
                   const SizedBox(height: 20),
                   Center(
                     child: ElevatedButton(
