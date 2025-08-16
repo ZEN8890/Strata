@@ -28,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRememberedEmail(); // Muat email yang disimpan saat screen diinisialisasi
+    _loadRememberedUsername(); // Muat username yang disimpan saat screen diinisialisasi
   }
 
   @override
@@ -38,47 +38,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // Fungsi untuk memuat email yang disimpan
-  void _loadRememberedEmail() async {
+  // Fungsi untuk memuat username yang disimpan
+  void _loadRememberedUsername() async {
     final prefs = await SharedPreferences.getInstance();
-    final rememberedEmail = prefs.getString('remembered_email');
-    if (rememberedEmail != null && rememberedEmail.isNotEmpty) {
+    final rememberedUsername = prefs.getString('remembered_username');
+    if (rememberedUsername != null && rememberedUsername.isNotEmpty) {
       setState(() {
-        _emailController.text = rememberedEmail;
-        _rememberMe = true; // Set checkbox ke true jika email ditemukan
+        _emailController.text = rememberedUsername;
+        _rememberMe = true; // Set checkbox ke true jika username ditemukan
       });
     }
   }
 
-  // Fungsi untuk menyimpan email jika "Remember Me" dicentang
-  void _saveRememberedEmail(String email) async {
+  // Fungsi untuk menyimpan username jika "Remember Me" dicentang
+  void _saveRememberedUsername(String username) async {
     final prefs = await SharedPreferences.getInstance();
     if (_rememberMe) {
-      await prefs.setString('remembered_email', email);
+      await prefs.setString('remembered_username', username);
     } else {
-      await prefs.remove('remembered_email'); // Hapus jika tidak dicentang
+      await prefs.remove('remembered_username'); // Hapus jika tidak dicentang
     }
   }
 
   void _performLogin() async {
-    String email = _emailController.text.trim();
+    String username = _emailController.text.trim();
     String password = _passwordController.text.trim();
 
-    if (email.isEmpty || password.isEmpty) {
-      _showMessage('Email dan Password tidak boleh kosong!');
+    if (username.isEmpty || password.isEmpty) {
+      _showMessage('Username dan Password tidak boleh kosong!');
       return;
     }
 
+    // Tambahkan domain fiktif ke username sebelum login ke Firebase
+    final emailWithDomain = '$username@strata-lite.com';
+
     try {
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
+        email: emailWithDomain,
         password: password,
       );
 
       User? user = userCredential.user;
 
       if (user != null) {
-        _saveRememberedEmail(email);
+        // Simpan username, bukan email lengkap
+        _saveRememberedUsername(username);
 
         if (!context.mounted) return;
 
@@ -99,9 +103,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
           String role =
               (userDoc.data() as Map<String, dynamic>)['role'] ?? 'staff';
+          String name =
+              (userDoc.data() as Map<String, dynamic>)['name'] ?? 'Guest';
 
           if (role == 'admin') {
-            _showMessage('Login Berhasil sebagai Admin: ${user.email}!');
+            _showMessage('Login Berhasil sebagai Admin: $name!');
             if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(
@@ -109,7 +115,7 @@ class _LoginScreenState extends State<LoginScreen> {
               (Route<dynamic> route) => false,
             );
           } else if (role == 'supervisor') {
-            _showMessage('Login Berhasil sebagai Supervisor: ${user.email}!');
+            _showMessage('Login Berhasil sebagai Supervisor: $name!');
             if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(
@@ -118,8 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
             );
           } else {
             // Default to staff for any other or missing roles
-            _showMessage(
-                'Login Berhasil sebagai Pengguna Biasa (Staff): ${user.email}!');
+            _showMessage('Login Berhasil sebagai Staff: $name!');
             if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(
@@ -144,11 +149,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } on FirebaseAuthException catch (e) {
       String message;
       if (e.code == 'user-not-found') {
-        message = 'Tidak ada pengguna dengan email tersebut.';
+        message = 'Tidak ada pengguna dengan username tersebut.';
       } else if (e.code == 'wrong-password') {
-        message = 'Password salah untuk email tersebut.';
+        message = 'Password salah untuk username tersebut.';
       } else if (e.code == 'invalid-email') {
-        message = 'Format email tidak valid.';
+        message = 'Username tidak valid.';
       } else if (e.code == 'too-many-requests') {
         message = 'Terlalu banyak percobaan login gagal. Coba lagi nanti.';
       } else {
@@ -189,11 +194,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: TextField(
                   controller: _emailController,
                   decoration: const InputDecoration(
-                    labelText: 'Email',
+                    labelText: 'Username',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.email),
+                    prefixIcon: Icon(Icons.person),
                   ),
-                  keyboardType: TextInputType.emailAddress,
+                  keyboardType: TextInputType.text,
                 ),
               ),
               const SizedBox(height: 20),
