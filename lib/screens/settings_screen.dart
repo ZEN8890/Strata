@@ -1,3 +1,4 @@
+// Path: lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Untuk mendapatkan user yang sedang login
 import 'package:cloud_firestore/cloud_firestore.dart'; // Untuk mengambil data user dari Firestore
@@ -26,25 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       TextEditingController(); // Email biasanya tidak diedit langsung
   final TextEditingController _phoneController = TextEditingController();
 
-  String? _selectedDepartment; // State untuk Dropdown Departemen
-
   bool _isLoading = true;
   String? _errorMessage;
-
-  // Contoh daftar departemen (bisa diambil dari Firestore juga di masa depan)
-  final List<String> _departments = [
-    'Marketing',
-    'Sales', // New
-    'HR',
-    'Finance', // New
-    'FO', // New
-    'FBS', // New
-    'FBP', // New
-    'HK', // New
-    'Engineering', // New
-    'Security', // New
-    'IT'
-  ];
 
   @override
   void initState() {
@@ -121,15 +105,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         _nameController.text = userData['name'] ?? '';
         _phoneController.text = userData['phoneNumber'] ?? '';
-        _selectedDepartment =
-            userData['department']; // Set departemen yang dipilih
-        log('User data loaded: Name=${_nameController.text}, Email=${_emailController.text}, Department=${_selectedDepartment}, Phone=${_phoneController.text}');
+        log('User data loaded: Name=${_nameController.text}, Email=${_emailController.text}, Phone=${_phoneController.text}');
       } else {
         // Jika dokumen user tidak ada, set nilai default
         _nameController.text = 'Nama Tidak Ditemukan';
         _phoneController.text = '';
-        _selectedDepartment =
-            null; // Atau set ke _departments.first jika ingin default
         log('Warning: User document not found in Firestore for UID: ${_currentUser!.uid}');
       }
     } catch (e) {
@@ -155,12 +135,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    if (_selectedDepartment == null || _selectedDepartment!.isEmpty) {
-      _showNotification('Input Tidak Lengkap', 'Departemen tidak boleh kosong.',
-          isError: true);
-      return;
-    }
-
     setState(() {
       _isLoading = true;
     });
@@ -172,8 +146,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'email': _emailController.text
                 .trim(), // Pastikan email juga disimpan jika perlu
             'phoneNumber': _phoneController.text.trim(),
-            'department': _selectedDepartment,
-            // Anda bisa menambahkan field lain seperti 'role' di sini jika belum ada
           },
           SetOptions(
               merge:
@@ -281,34 +253,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 prefixIcon: Icon(Icons.phone),
                               ),
                               keyboardType: TextInputType.phone,
-                            ),
-                            const SizedBox(height: 15),
-                            DropdownButtonFormField<String>(
-                              value:
-                                  _selectedDepartment, // Gunakan _selectedDepartment
-                              decoration: const InputDecoration(
-                                labelText: 'Departemen',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.business),
-                              ),
-                              items: _departments.map((String department) {
-                                return DropdownMenuItem<String>(
-                                  value: department,
-                                  child: Text(department),
-                                );
-                              }).toList(),
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  _selectedDepartment = newValue;
-                                });
-                              },
-                              // Tambahkan validator jika departemen wajib diisi
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Departemen tidak boleh kosong';
-                                }
-                                return null;
-                              },
                             ),
                           ],
                         ),

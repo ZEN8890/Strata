@@ -1,11 +1,11 @@
 // Path: lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
-import 'package:shared_preferences/shared_preferences.dart'; // Import shared_preferences
-import 'package:cloud_firestore/cloud_firestore.dart'; // Import Cloud Firestore to read user roles
-import 'package:Strata_lite/screens/admin_dashboard_screen.dart'; // Import AdminDashboardScreen
-import 'package:Strata_lite/screens/supervisor_dashboard_screen.dart'; // Import SupervisorDashboardScreen
-import 'package:Strata_lite/screens/staff_dashboard_screen.dart'; // Assuming you have a staff dashboard
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:Strata_lite/screens/admin_dashboard_screen.dart';
+import 'package:Strata_lite/screens/supervisor_dashboard_screen.dart';
+import 'package:Strata_lite/screens/staff_dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,53 +15,50 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore =
-      FirebaseFirestore.instance; // Add Firestore instance
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  bool _rememberMe = false; // State untuk checkbox "Remember Me"
-  bool _obscurePassword = true; // State untuk toggle tampil/sembunyi password
+  bool _rememberMe = false;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
     super.initState();
-    _loadRememberedUsername(); // Muat username yang disimpan saat screen diinisialisasi
+    _loadRememberedUsername();
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  // Fungsi untuk memuat username yang disimpan
   void _loadRememberedUsername() async {
     final prefs = await SharedPreferences.getInstance();
     final rememberedUsername = prefs.getString('remembered_username');
     if (rememberedUsername != null && rememberedUsername.isNotEmpty) {
       setState(() {
-        _emailController.text = rememberedUsername;
-        _rememberMe = true; // Set checkbox ke true jika username ditemukan
+        _usernameController.text = rememberedUsername;
+        _rememberMe = true;
       });
     }
   }
 
-  // Fungsi untuk menyimpan username jika "Remember Me" dicentang
   void _saveRememberedUsername(String username) async {
     final prefs = await SharedPreferences.getInstance();
     if (_rememberMe) {
       await prefs.setString('remembered_username', username);
     } else {
-      await prefs.remove('remembered_username'); // Hapus jika tidak dicentang
+      await prefs.remove('remembered_username');
     }
   }
 
   void _performLogin() async {
-    String username = _emailController.text.trim();
+    String username = _usernameController.text.trim();
     String password = _passwordController.text.trim();
 
     if (username.isEmpty || password.isEmpty) {
@@ -69,7 +66,6 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Tambahkan domain fiktif ke username sebelum login ke Firebase
     final emailWithDomain = '$username@strata-lite.com';
 
     try {
@@ -81,7 +77,6 @@ class _LoginScreenState extends State<LoginScreen> {
       User? user = userCredential.user;
 
       if (user != null) {
-        // Simpan username, bukan email lengkap
         _saveRememberedUsername(username);
 
         if (!context.mounted) return;
@@ -106,7 +101,8 @@ class _LoginScreenState extends State<LoginScreen> {
           String name =
               (userDoc.data() as Map<String, dynamic>)['name'] ?? 'Guest';
 
-          if (role == 'admin') {
+          // LOGIKA BARU UNTUK PERAN 'dev'
+          if (role == 'admin' || role == 'dev') {
             _showMessage('Login Berhasil sebagai Admin: $name!');
             if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
@@ -123,7 +119,6 @@ class _LoginScreenState extends State<LoginScreen> {
               (Route<dynamic> route) => false,
             );
           } else {
-            // Default to staff for any other or missing roles
             _showMessage('Login Berhasil sebagai Staff: $name!');
             if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
@@ -192,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(
                 width: 300,
                 child: TextField(
-                  controller: _emailController,
+                  controller: _usernameController,
                   decoration: const InputDecoration(
                     labelText: 'Username',
                     border: OutlineInputBorder(),
@@ -206,8 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: 300,
                 child: TextField(
                   controller: _passwordController,
-                  obscureText:
-                      _obscurePassword, // Controlled by _obscurePassword state
+                  obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     labelText: 'Password',
                     border: const OutlineInputBorder(),
@@ -220,7 +214,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       onPressed: () {
                         setState(() {
-                          _obscurePassword = !_obscurePassword; // Toggle state
+                          _obscurePassword = !_obscurePassword;
                         });
                       },
                     ),

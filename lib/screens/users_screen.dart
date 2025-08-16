@@ -43,7 +43,14 @@ class _UsersScreenState extends State<UsersScreen> {
     'Security',
     'IT'
   ];
-  final List<String> _roles = ['staff', 'supervisor', 'admin'];
+  final List<String> _roles = [
+    'staff',
+    'admin',
+    'dev'
+  ]; // DIUBAH: MENAMBAHKAN 'dev'
+
+  bool _obscureNewUserPassword = true;
+  bool _obscureAdminPassword = true;
 
   @override
   void initState() {
@@ -110,29 +117,30 @@ class _UsersScreenState extends State<UsersScreen> {
     final bool isEditing = userToEdit != null;
     final _formKey = GlobalKey<FormState>();
 
+    final String? currentDepartment = isEditing
+        ? (userToEdit!.data() as Map<String, dynamic>)['department']
+        : null;
+    final bool isDev = currentDepartment == 'Dev';
+
     TextEditingController nameController = TextEditingController(
         text: isEditing
             ? (userToEdit!.data() as Map<String, dynamic>)['name']
             : '');
-    TextEditingController emailController = TextEditingController(
+    TextEditingController usernameController = TextEditingController(
         text: isEditing
             ? (userToEdit!.data() as Map<String, dynamic>)['email']
+                .toString()
+                .split('@')[0]
             : '');
     TextEditingController phoneController = TextEditingController(
         text: isEditing
             ? (userToEdit!.data() as Map<String, dynamic>)['phoneNumber']
             : '');
     TextEditingController passwordController = TextEditingController();
-    String? selectedDepartment = isEditing
-        ? (userToEdit!.data() as Map<String, dynamic>)['department']
-        : _departments.first;
     String? selectedRole = isEditing
         ? (userToEdit!.data() as Map<String, dynamic>)['role']
         : _roles.first;
 
-    if (!isEditing && !_departments.contains(selectedDepartment)) {
-      selectedDepartment = _departments.first;
-    }
     if (!isEditing && !_roles.contains(selectedRole)) {
       selectedRole = _roles.first;
     }
@@ -172,25 +180,24 @@ class _UsersScreenState extends State<UsersScreen> {
                       value!.isEmpty ? 'Nama tidak boleh kosong' : null,
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
-                  controller: emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                if (!isEditing) ...[
+                  TextFormField(
+                    controller: usernameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    keyboardType: TextInputType.text,
+                    validator: (value) {
+                      if (value!.isEmpty) return 'Username tidak boleh kosong';
+                      return null;
+                    },
                   ),
-                  keyboardType: TextInputType.emailAddress,
-                  readOnly: isEditing,
-                  validator: (value) {
-                    if (value!.isEmpty) return 'Email tidak boleh kosong';
-                    if (!value.contains('@') || !value.contains('.'))
-                      return 'Format email tidak valid';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
+                ],
                 TextFormField(
                   controller: phoneController,
                   decoration: const InputDecoration(
@@ -203,73 +210,101 @@ class _UsersScreenState extends State<UsersScreen> {
                   keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: selectedDepartment,
-                  decoration: const InputDecoration(
-                    labelText: 'Departemen',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  items: _departments
-                      .map((dep) =>
-                          DropdownMenuItem(value: dep, child: Text(dep)))
-                      .toList(),
-                  onChanged: (value) => selectedDepartment = value,
-                  validator: (value) => value == null || value.isEmpty
-                      ? 'Pilih departemen'
-                      : null,
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: selectedRole,
-                  decoration: const InputDecoration(
-                    labelText: 'Role',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  items: _roles
-                      .map((role) => DropdownMenuItem(
-                          value: role, child: Text(role.toUpperCase())))
-                      .toList(),
-                  onChanged: (value) => selectedRole = value,
-                  validator: (value) =>
-                      value == null || value.isEmpty ? 'Pilih role' : null,
-                ),
-                const SizedBox(height: 10),
-                if (!isEditing) ...[
-                  TextFormField(
-                    controller: passwordController,
+                if (isEditing && isDev)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Departemen',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        currentDepartment!,
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  )
+                else
+                  DropdownButtonFormField<String>(
+                    value: selectedRole,
                     decoration: const InputDecoration(
-                      labelText: 'Password Pengguna Baru (min. 6 karakter)',
+                      labelText: 'Role',
                       border: OutlineInputBorder(),
                       isDense: true,
                       contentPadding:
                           EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
-                    obscureText: true,
-                    validator: (value) => value!.length < 6
-                        ? 'Password minimal 6 karakter'
-                        : null,
+                    items: _roles
+                        .map((role) => DropdownMenuItem(
+                            value: role, child: Text(role.toUpperCase())))
+                        .toList(),
+                    onChanged: (value) => selectedRole = value,
+                    validator: (value) =>
+                        value == null || value.isEmpty ? 'Pilih role' : null,
                   ),
+                const SizedBox(height: 10),
+                if (!isEditing) ...[
+                  StatefulBuilder(builder: (context, setInnerState) {
+                    return TextFormField(
+                      controller: passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Password Pengguna Baru (min. 6 karakter)',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureNewUserPassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                          onPressed: () {
+                            setInnerState(() {
+                              _obscureNewUserPassword =
+                                  !_obscureNewUserPassword;
+                            });
+                          },
+                        ),
+                      ),
+                      obscureText: _obscureNewUserPassword,
+                      validator: (value) => value!.length < 6
+                          ? 'Password minimal 6 karakter'
+                          : null,
+                    );
+                  }),
                   const SizedBox(height: 10),
                 ],
-                TextFormField(
-                  controller: adminPasswordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Sandi Admin Anda',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  obscureText: true,
-                  validator: (value) =>
-                      value!.isEmpty ? 'Sandi admin tidak boleh kosong.' : null,
-                ),
+                StatefulBuilder(builder: (context, setInnerState) {
+                  return TextFormField(
+                    controller: adminPasswordController,
+                    decoration: InputDecoration(
+                      labelText: 'Sandi Admin Anda',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureAdminPassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setInnerState(() {
+                            _obscureAdminPassword = !_obscureAdminPassword;
+                          });
+                        },
+                      ),
+                    ),
+                    obscureText: _obscureAdminPassword,
+                    validator: (value) => value!.isEmpty
+                        ? 'Sandi admin tidak boleh kosong.'
+                        : null,
+                  );
+                }),
               ],
             ),
           ),
@@ -282,96 +317,79 @@ class _UsersScreenState extends State<UsersScreen> {
           ElevatedButton(
             onPressed: () async {
               if (_formKey.currentState!.validate()) {
-                if (selectedDepartment == null || selectedDepartment!.isEmpty) {
-                  _showNotification(
-                      'Validasi Gagal', 'Departemen tidak boleh kosong.',
-                      isError: true);
-                  return;
-                }
-                if (selectedRole == null || selectedRole!.isEmpty) {
-                  _showNotification(
-                      'Validasi Gagal', 'Role tidak boleh kosong.',
-                      isError: true);
-                  return;
-                }
-
-                final localDialogContext = dialogContext;
-                final String? currentAdminEmail = _auth.currentUser!.email;
-                final String currentAdminPassword =
-                    adminPasswordController.text.trim();
-
-                try {
-                  await _auth.signInWithEmailAndPassword(
-                      email: currentAdminEmail!,
-                      password: currentAdminPassword);
-
-                  if (isEditing) {
-                    await _firestore
-                        .collection('users')
-                        .doc(userToEdit!.id)
-                        .update({
-                      'name': nameController.text.trim(),
-                      'phoneNumber': phoneController.text.trim(),
-                      'department': selectedDepartment,
-                      'role': selectedRole,
-                    });
-                    if (localDialogContext.mounted) {
-                      Navigator.of(localDialogContext).pop();
-                    }
-                    _showNotification('Berhasil!',
-                        'Pengguna ${nameController.text} berhasil diperbarui.',
-                        isError: false);
-                  } else {
-                    final newUserCredential =
+                if (isEditing) {
+                  // Perubahan: Hanya update data Firestore, tidak perlu Cloud Functions
+                  await _firestore
+                      .collection('users')
+                      .doc(userToEdit!.id)
+                      .update({
+                    'name': nameController.text.trim(),
+                    'phoneNumber': phoneController.text.trim(),
+                    'department': isDev ? 'Dev' : selectedRole,
+                    'role': selectedRole,
+                  });
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                  }
+                  _showNotification('Berhasil!',
+                      'Pengguna ${nameController.text} berhasil diperbarui.',
+                      isError: false);
+                } else {
+                  if (selectedRole == null || selectedRole!.isEmpty) {
+                    _showNotification(
+                        'Validasi Gagal', 'Role tidak boleh kosong.',
+                        isError: true);
+                    return;
+                  }
+                  final newUserEmail =
+                      '${usernameController.text.trim()}@strata-lite.com';
+                  try {
+                    // Perubahan: Buat pengguna langsung di Flutter
+                    UserCredential userCredential =
                         await _auth.createUserWithEmailAndPassword(
-                            email: emailController.text.trim(),
-                            password: passwordController.text.trim());
+                      email: newUserEmail,
+                      password: passwordController.text.trim(),
+                    );
 
+                    // Tambahkan profil pengguna ke Firestore
                     await _firestore
                         .collection('users')
-                        .doc(newUserCredential.user!.uid)
+                        .doc(userCredential.user!.uid)
                         .set({
                       'name': nameController.text.trim(),
-                      'email': emailController.text.trim(),
+                      'email': newUserEmail,
                       'phoneNumber': phoneController.text.trim(),
-                      'department': selectedDepartment,
+                      'department': selectedRole,
                       'role': selectedRole,
                       'createdAt': FieldValue.serverTimestamp(),
                     });
 
-                    await _auth.signInWithEmailAndPassword(
-                        email: currentAdminEmail!,
-                        password: currentAdminPassword);
-
-                    if (localDialogContext.mounted) {
-                      Navigator.of(localDialogContext).pop();
+                    if (mounted) {
+                      Navigator.of(context).pop();
                     }
                     _showNotification('Akun Berhasil Dibuat!',
                         'Pengguna ${nameController.text} berhasil ditambahkan.',
                         isError: false);
-                  }
-                } on FirebaseAuthException catch (e) {
-                  String message;
-                  if (e.code == 'wrong-password' ||
-                      e.code == 'invalid-credential') {
-                    message = 'Sandi admin salah.';
-                  } else if (e.code == 'email-already-in-use') {
-                    message = 'Email ini sudah terdaftar.';
-                  } else if (e.code == 'weak-password') {
-                    message = 'Password terlalu lemah.';
-                  } else {
-                    message = 'Gagal memproses akun: ${e.message}';
-                  }
-                  if (localDialogContext.mounted) {
-                    Navigator.of(localDialogContext).pop();
-                  }
-                  _showNotification('Gagal!', message, isError: true);
-                } catch (e) {
-                  _showNotification('Error', 'Terjadi kesalahan umum: $e',
-                      isError: true);
-                  log('Error in add/edit user flow: $e');
-                  if (localDialogContext.mounted) {
-                    Navigator.of(localDialogContext).pop();
+                  } on FirebaseAuthException catch (e) {
+                    String message;
+                    if (e.code == 'email-already-in-use') {
+                      message = 'Email ini sudah terdaftar.';
+                    } else if (e.code == 'weak-password') {
+                      message = 'Password terlalu lemah.';
+                    } else {
+                      message = 'Gagal memproses akun: ${e.message}';
+                    }
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
+                    _showNotification('Gagal!', message, isError: true);
+                  } catch (e) {
+                    _showNotification('Error', 'Terjadi kesalahan umum: $e',
+                        isError: true);
+                    log('Error in add/edit user flow: $e');
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
                   }
                 }
               }
@@ -385,6 +403,17 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Future<void> _deleteUser(String userId, String userName) async {
     try {
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      final userData = userDoc.data() as Map<String, dynamic>?;
+      final userRole = userData?['role'];
+
+      // DIUBAH: Tambahkan logika untuk mencegah penghapusan akun 'dev'
+      if (userRole == 'dev') {
+        _showNotification('Akses Ditolak', 'Akun Dev tidak dapat dihapus.',
+            isError: true);
+        return;
+      }
+
       final confirm = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -434,7 +463,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
       List<String> headers = [
         'Nama Lengkap',
-        'Email',
+        'Username',
         'Nomor Telepon',
         'Departemen',
         'Role'
@@ -451,7 +480,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
         List<dynamic> row = [
           userData['name'] ?? '',
-          userData['email'] ?? '',
+          (userData['email'] ?? '').toString().split('@')[0],
           phoneNumber,
           userData['department'] ?? '',
           userData['role'] ?? '',
@@ -520,19 +549,19 @@ class _UsersScreenState extends State<UsersScreen> {
             .toList();
 
         final nameIndex = headerRow.indexOf('Nama Lengkap');
-        final emailIndex = headerRow.indexOf('Email');
+        final usernameIndex = headerRow.indexOf('Username');
         final phoneIndex = headerRow.indexOf('Nomor Telepon');
         final departmentIndex = headerRow.indexOf('Departemen');
         final roleIndex = headerRow.indexOf('Role');
         final passwordIndex = headerRow.indexOf('Password');
 
         if (nameIndex == -1 ||
-            emailIndex == -1 ||
+            usernameIndex == -1 ||
             departmentIndex == -1 ||
             roleIndex == -1 ||
             passwordIndex == -1) {
           _showNotification('Gagal Import',
-              'File Excel tidak memiliki semua kolom yang diperlukan (Nama Lengkap, Email, Nomor Telepon, Departemen, Role, Password).',
+              'File Excel tidak memiliki semua kolom yang diperlukan (Nama Lengkap, Username, Nomor Telepon, Departemen, Role, Password).',
               isError: true);
           return;
         }
@@ -548,8 +577,8 @@ class _UsersScreenState extends State<UsersScreen> {
         for (int i = 1; i < sheet.rows.length; i++) {
           final row = sheet.rows[i];
           final String name = (row[nameIndex]?.value?.toString().trim() ?? '');
-          final String email =
-              (row[emailIndex]?.value?.toString().trim() ?? '');
+          final String username =
+              (row[usernameIndex]?.value?.toString().trim() ?? '');
           final String phoneNumber =
               (row[phoneIndex]?.value?.toString().trim() ?? '');
           final String department =
@@ -559,13 +588,8 @@ class _UsersScreenState extends State<UsersScreen> {
           final String password =
               (row[passwordIndex]?.value?.toString().trim() ?? '');
 
-          if (name.isEmpty || email.isEmpty || password.isEmpty) {
-            log('Skipping row $i: Nama, Email, atau Password kosong.');
-            failedCount++;
-            continue;
-          }
-          if (!email.contains('@') || !email.contains('.')) {
-            log('Skipping row $i: Format email tidak valid.');
+          if (name.isEmpty || username.isEmpty || password.isEmpty) {
+            log('Skipping row $i: Nama, Username, atau Password kosong.');
             failedCount++;
             continue;
           }
@@ -585,30 +609,24 @@ class _UsersScreenState extends State<UsersScreen> {
           }
 
           try {
-            final newUserCredential =
-                await _auth.createUserWithEmailAndPassword(
-                    email: email, password: password);
-
-            await _firestore
-                .collection('users')
-                .doc(newUserCredential.user!.uid)
-                .set({
+            final newUserEmail = '$username@strata-lite.com';
+            await _functions.httpsCallable('createUserAndProfile').call({
               'name': name,
-              'email': email,
+              'email': newUserEmail,
+              'password': password,
               'phoneNumber': phoneNumber,
               'department': department,
               'role': role,
-              'createdAt': FieldValue.serverTimestamp(),
             });
             importedCount++;
 
             await _auth.signInWithEmailAndPassword(
                 email: currentAdminEmail!, password: adminPassword);
           } on FirebaseAuthException catch (e) {
-            log('Gagal mengimpor $email (Auth Error): ${e.message}');
+            log('Gagal mengimpor $username (Auth Error): ${e.message}');
             failedCount++;
           } catch (e) {
-            log('Gagal mengimpor $email (General Error): $e');
+            log('Gagal mengimpor $username (General Error): $e');
             failedCount++;
           }
         }
@@ -637,11 +655,27 @@ class _UsersScreenState extends State<UsersScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Konfirmasi Sandi Admin'),
-          content: TextField(
-            controller: passwordController,
-            obscureText: true,
-            decoration: const InputDecoration(hintText: 'Masukkan sandi admin'),
-          ),
+          content: StatefulBuilder(builder: (context, setInnerState) {
+            return TextField(
+              controller: passwordController,
+              obscureText: _obscureAdminPassword,
+              decoration: InputDecoration(
+                hintText: 'Masukkan sandi admin',
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureAdminPassword
+                        ? Icons.visibility
+                        : Icons.visibility_off,
+                  ),
+                  onPressed: () {
+                    setInnerState(() {
+                      _obscureAdminPassword = !_obscureAdminPassword;
+                    });
+                  },
+                ),
+              ),
+            );
+          }),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),
@@ -670,7 +704,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
       List<String> headers = [
         'Nama Lengkap',
-        'Email',
+        'Username',
         'Nomor Telepon',
         'Departemen',
         'Role',
@@ -784,7 +818,6 @@ class _UsersScreenState extends State<UsersScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               ElevatedButton.icon(
-                // Tombol "Tambah Pengguna" digeser ke kiri
                 onPressed: () => _addEditUser(),
                 icon: const Icon(Icons.person_add),
                 label: const Text('Tambah Pengguna'),
@@ -836,12 +869,14 @@ class _UsersScreenState extends State<UsersScreen> {
                 final String role = (data['role'] ?? '').toLowerCase();
                 final String phoneNumber =
                     (data['phoneNumber'] ?? '').toLowerCase();
+                final String username = email.split('@')[0];
 
                 return name.contains(lowerCaseQuery) ||
                     email.contains(lowerCaseQuery) ||
                     department.contains(lowerCaseQuery) ||
                     role.contains(lowerCaseQuery) ||
-                    phoneNumber.contains(lowerCaseQuery);
+                    phoneNumber.contains(lowerCaseQuery) ||
+                    username.contains(lowerCaseQuery);
               }).toList();
 
               if (filteredUsers.isEmpty && _searchQuery.isNotEmpty) {
@@ -860,6 +895,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
                   final String name = userData['name'] ?? 'N/A';
                   final String email = userData['email'] ?? 'N/A';
+                  final String username = email.split('@')[0];
                   final String phoneNumber = userData['phoneNumber'] ?? 'N/A';
                   final String department = userData['department'] ?? 'N/A';
                   final String role = userData['role'] ?? 'N/A';
@@ -874,6 +910,9 @@ class _UsersScreenState extends State<UsersScreen> {
                       break;
                     case 'staff':
                       roleColor = Colors.blue[700]!;
+                      break;
+                    case 'dev':
+                      roleColor = Colors.purple[700]!;
                       break;
                     default:
                       roleColor = Colors.grey;
@@ -903,7 +942,7 @@ class _UsersScreenState extends State<UsersScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SizedBox(height: 4),
-                          Text('Email: $email',
+                          Text('Username: $username',
                               style: const TextStyle(fontSize: 14)),
                           Text('Telepon: $phoneNumber',
                               style: const TextStyle(fontSize: 14)),
@@ -925,11 +964,13 @@ class _UsersScreenState extends State<UsersScreen> {
                             tooltip: 'Edit User',
                             onPressed: () => _addEditUser(userToEdit: userDoc),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            tooltip: 'Hapus User',
-                            onPressed: () => _deleteUser(userDoc.id, name),
-                          ),
+                          // DIUBAH: Sembunyikan tombol hapus untuk peran 'dev'
+                          if (role != 'dev')
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              tooltip: 'Hapus User',
+                              onPressed: () => _deleteUser(userDoc.id, name),
+                            ),
                         ],
                       ),
                       onTap: () {
