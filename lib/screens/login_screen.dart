@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:Strata_lite/screens/admin_dashboard_screen.dart';
 import 'package:Strata_lite/screens/supervisor_dashboard_screen.dart';
 import 'package:Strata_lite/screens/staff_dashboard_screen.dart';
+import 'package:animated_text_kit/animated_text_kit.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -172,26 +173,57 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login Page')),
+      backgroundColor: Colors.white,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // Tambahkan AnimatedTextKit untuk animasi teks "Strata"
+              AnimatedTextKit(
+                animatedTexts: [
+                  TypewriterAnimatedText(
+                    'Strata',
+                    textStyle: const TextStyle(
+                      fontSize: 45.0,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.blueAccent,
+                      letterSpacing: 2.0,
+                    ),
+                    speed: const Duration(milliseconds: 200),
+                  ),
+                ],
+                totalRepeatCount: 1,
+                isRepeatingAnimation: false,
+              ),
+              const SizedBox(height: 10),
+              // Tambahkan logo di bawah teks "Strata"
               Image.asset(
                 'assets/Strata_logo.png',
                 height: 100,
               ),
               const SizedBox(height: 30),
+              // Ubah teks "Selamat Datang!" menjadi "Login"
+              Text(
+                'Login',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
+              const SizedBox(height: 40),
               SizedBox(
                 width: 300,
                 child: TextField(
                   controller: _usernameController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Username',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    prefixIcon: const Icon(Icons.person),
                   ),
                   keyboardType: TextInputType.text,
                 ),
@@ -204,7 +236,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    border: const OutlineInputBorder(),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     prefixIcon: const Icon(Icons.lock),
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -233,8 +267,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           _rememberMe = newValue ?? false;
                         });
                       },
+                      activeColor: Colors.blueAccent,
                     ),
-                    const Text('Ingat Saya'),
+                    const Text('Ingat Saya',
+                        style: TextStyle(color: Colors.black54)),
                   ],
                 ),
               ),
@@ -244,10 +280,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 height: 50,
                 child: ElevatedButton(
                   onPressed: _performLogin,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                   child: const Text(
                     'Login',
-                    style: TextStyle(fontSize: 18),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'made by Steven Gunawan 2025',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 12,
                 ),
               ),
             ],

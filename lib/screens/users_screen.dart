@@ -46,7 +46,7 @@ class _UsersScreenState extends State<UsersScreen> {
   final List<String> _roles = [
     'staff',
     'admin',
-    'dev'
+    'supervisor'
   ]; // DIUBAH: MENAMBAHKAN 'dev'
 
   bool _obscureNewUserPassword = true;
@@ -117,10 +117,9 @@ class _UsersScreenState extends State<UsersScreen> {
     final bool isEditing = userToEdit != null;
     final _formKey = GlobalKey<FormState>();
 
-    final String? currentDepartment = isEditing
-        ? (userToEdit!.data() as Map<String, dynamic>)['department']
-        : null;
-    final bool isDev = currentDepartment == 'Dev';
+    final String? currentRole =
+        isEditing ? (userToEdit!.data() as Map<String, dynamic>)['role'] : null;
+    final bool isDev = currentRole == 'dev';
 
     TextEditingController nameController = TextEditingController(
         text: isEditing
@@ -210,40 +209,23 @@ class _UsersScreenState extends State<UsersScreen> {
                   keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 10),
-                if (isEditing && isDev)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Departemen',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        currentDepartment!,
-                        style: TextStyle(fontSize: 16),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                  )
-                else
-                  DropdownButtonFormField<String>(
-                    value: selectedRole,
-                    decoration: const InputDecoration(
-                      labelText: 'Role',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    items: _roles
-                        .map((role) => DropdownMenuItem(
-                            value: role, child: Text(role.toUpperCase())))
-                        .toList(),
-                    onChanged: (value) => selectedRole = value,
-                    validator: (value) =>
-                        value == null || value.isEmpty ? 'Pilih role' : null,
+                DropdownButtonFormField<String>(
+                  value: isEditing && isDev ? 'dev' : selectedRole,
+                  decoration: const InputDecoration(
+                    labelText: 'Role',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
+                  items: (isEditing && isDev ? ['dev'] : _roles)
+                      .map((role) => DropdownMenuItem(
+                          value: role, child: Text(role.toUpperCase())))
+                      .toList(),
+                  onChanged: (value) => selectedRole = value,
+                  validator: (value) =>
+                      value == null || value.isEmpty ? 'Pilih role' : null,
+                ),
                 const SizedBox(height: 10),
                 if (!isEditing) ...[
                   StatefulBuilder(builder: (context, setInnerState) {
@@ -344,25 +326,37 @@ class _UsersScreenState extends State<UsersScreen> {
                   final newUserEmail =
                       '${usernameController.text.trim()}@strata-lite.com';
                   try {
-                    // Perubahan: Buat pengguna langsung di Flutter
-                    UserCredential userCredential =
-                        await _auth.createUserWithEmailAndPassword(
+                    // Simpan UID admin saat ini sebelum membuat pengguna baru
+                    final String? currentAdminUid = _auth.currentUser?.uid;
+
+                    // Buat pengguna baru (ini akan mengalihkan sesi)
+                    await _auth.createUserWithEmailAndPassword(
                       email: newUserEmail,
                       password: passwordController.text.trim(),
                     );
 
-                    // Tambahkan profil pengguna ke Firestore
-                    await _firestore
-                        .collection('users')
-                        .doc(userCredential.user!.uid)
-                        .set({
-                      'name': nameController.text.trim(),
-                      'email': newUserEmail,
-                      'phoneNumber': phoneController.text.trim(),
-                      'department': selectedRole,
-                      'role': selectedRole,
-                      'createdAt': FieldValue.serverTimestamp(),
-                    });
+                    // Ambil UID pengguna baru
+                    final String? newUserId = _auth.currentUser?.uid;
+
+                    // Tambahkan profil pengguna baru ke Firestore
+                    if (newUserId != null) {
+                      await _firestore.collection('users').doc(newUserId).set({
+                        'name': nameController.text.trim(),
+                        'email': newUserEmail,
+                        'phoneNumber': phoneController.text.trim(),
+                        'department': selectedRole,
+                        'role': selectedRole,
+                        'createdAt': FieldValue.serverTimestamp(),
+                      });
+                    }
+
+                    // Log out pengguna baru, lalu login kembali sebagai admin
+                    if (currentAdminUid != null &&
+                        adminPasswordController.text.isNotEmpty) {
+                      await _auth.signInWithEmailAndPassword(
+                          email: adminEmail!,
+                          password: adminPasswordController.text);
+                    }
 
                     if (mounted) {
                       Navigator.of(context).pop();

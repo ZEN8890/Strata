@@ -1,9 +1,10 @@
+// Path: lib/screens/staff_dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:Strata_lite/screens/take_item_screen.dart'; // Import halaman Ambil Barang
-import 'package:Strata_lite/screens/settings_screen.dart'; // Import halaman Pengaturan
-import 'dart:developer'; // Untuk log.log()
+import 'package:Strata_lite/screens/take_item_screen.dart';
+import 'package:Strata_lite/screens/settings_screen.dart';
+import 'dart:developer';
 
 class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
@@ -13,9 +14,8 @@ class StaffDashboardScreen extends StatefulWidget {
 }
 
 class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
-  int _selectedIndex = 0; // Indeks halaman yang dipilih
+  int _selectedIndex = 0;
 
-  // State untuk data pengguna di DrawerHeader (mirip AdminDashboard)
   String _drawerUserName = 'Memuat Nama...';
   String _drawerUserEmail = 'Memuat Email...';
   String _drawerUserDepartment = 'Memuat Departemen...';
@@ -24,19 +24,17 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Daftar halaman yang dapat diakses staff
   final List<Widget> _pages = [
-    const TakeItemScreen(), // Indeks 0: Halaman Ambil Barang
-    const SettingsScreen(), // Indeks 1: Halaman Pengaturan
+    const TakeItemScreen(),
+    const SettingsScreen(),
   ];
 
   @override
   void initState() {
     super.initState();
-    _loadDrawerUserData(); // Muat data pengguna saat initState
+    _loadDrawerUserData();
   }
 
-  // Fungsi untuk memuat data pengguna untuk DrawerHeader (disalin dari AdminDashboard)
   Future<void> _loadDrawerUserData() async {
     if (!mounted) return;
     setState(() {
@@ -103,7 +101,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     });
   }
 
-  // Fungsi untuk menampilkan dialog konfirmasi logout (disalin dari AdminDashboard)
   Future<void> _confirmLogout() async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -135,15 +132,8 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-            'Dashboard Staff Strata Lite'), // Judul AppBar untuk staff
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _confirmLogout,
-          ),
-        ],
+        title: const Text('Dashboard Staff Strata Lite'),
+        actions: [], // DIHAPUS: Tombol logout dari AppBar
       ),
       drawer: Drawer(
         child: ListView(
@@ -196,7 +186,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               leading: const Icon(Icons.shopping_cart),
               title: const Text('Ambil Barang'),
               onTap: () {
-                _onItemTapped(0); // Indeks 0 untuk TakeItemScreen
+                _onItemTapped(0);
                 Navigator.pop(context);
               },
             ),
@@ -204,7 +194,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               leading: const Icon(Icons.settings),
               title: const Text('Pengaturan'),
               onTap: () {
-                _onItemTapped(1); // Indeks 1 untuk SettingsScreen
+                _onItemTapped(1);
                 Navigator.pop(context);
               },
             ),

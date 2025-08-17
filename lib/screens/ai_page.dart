@@ -21,6 +21,7 @@ class _AiPageState extends State<AiPage> {
   final List<Map<String, String>> _messages = [];
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isSending = false;
@@ -41,10 +42,6 @@ class _AiPageState extends State<AiPage> {
     'siapa yang mengambil barang': 'whoTookItems',
     'siapa staf paling aktif ambil barang': 'mostActiveStaff',
     'staf paling aktif': 'mostActiveStaff',
-    'stok barang': 'itemStock',
-    'cek stok': 'itemStock',
-    'berapa stok': 'itemStock',
-    'sisa stok': 'itemStock',
   };
 
   final Map<String, int> _monthSynonyms = {
@@ -104,15 +101,15 @@ class _AiPageState extends State<AiPage> {
         'text':
             'Hai! 👋 Saya Nevets, AI personal Anda yang siap membantu cek inventaris dengan mudah! 😉\n\n'
                 'Berikut list yang bisa saya lakukan:\n\n'
-                '• `Barang apa saja yang masuk hari ini/tanggal tertentu?`\n'
-                '• `Barang yang keluar hari ini/tanggal tertentu?`\n'
-                '• `Item dengan stok rendah`\n'
-                '• `Barang yang paling sering diambil`\n'
-                '• `Siapa yang mengambil barang hari ini/tanggal tertentu?`\n'
-                '• `Item List`\n'
-                '• `Berapa stok [nama barang]?`\n'
-                '• `Barang apa yang akan kedaluwarsa?`\n'
-                '• `Siapa staf paling aktif ambil barang?`'
+                '• Barang apa saja yang masuk hari ini/tanggal tertentu?\n'
+                '• Barang yang keluar hari ini/tanggal tertentu?\n'
+                '• Item dengan stok rendah\n'
+                '• Barang yang paling sering diambil\n'
+                '• Siapa yang mengambil barang hari ini/tanggal tertentu?\n'
+                '• Item List\n'
+                '• Berapa stok [nama barang]?\n'
+                '• Barang apa yang akan kedaluwarsa?\n'
+                '• Siapa staf paling aktif ambil barang?'
       });
     });
     _scrollToBottom();
@@ -260,25 +257,27 @@ class _AiPageState extends State<AiPage> {
       final queryWords = lowerQuery.split(' ');
       final targetWords = lowerTarget.split(' ');
 
-      int totalDistance = 0;
-      int matchedCount = 0;
+      int matchedWords = 0;
+      double totalWordSimilarity = 0;
 
       for (var qWord in queryWords) {
-        int minDistance = 9999;
+        double bestWordSimilarity = 0;
         for (var tWord in targetWords) {
-          int distance = _calculateLevenshteinDistance(qWord, tWord);
-          if (distance < minDistance) {
-            minDistance = distance;
+          final distance = _calculateLevenshteinDistance(qWord, tWord);
+          final wordSimilarity =
+              1.0 - (distance / (tWord.length > 0 ? tWord.length : 1));
+          if (wordSimilarity > bestWordSimilarity) {
+            bestWordSimilarity = wordSimilarity;
           }
         }
-        totalDistance += minDistance;
-        if (minDistance < qWord.length) {
-          matchedCount++;
+        totalWordSimilarity += bestWordSimilarity;
+        if (bestWordSimilarity > 0.6) {
+          // Consider it a match if word similarity is above a certain threshold
+          matchedWords++;
         }
       }
 
-      double similarity = (matchedCount / queryWords.length);
-      double score = similarity;
+      final score = (totalWordSimilarity / queryWords.length);
 
       if (score > highestScore && score > threshold) {
         highestScore = score;
@@ -316,6 +315,7 @@ class _AiPageState extends State<AiPage> {
         'kadaluwarsa',
         'expired',
         'stok',
+        'stock',
         'ambil'
       ];
       for (var keyword in importantKeywords) {
@@ -365,46 +365,53 @@ class _AiPageState extends State<AiPage> {
       final queryLower = query.toLowerCase();
       final targetDate = _parseDateFromQuery(queryLower);
 
-      String? matchedCommand =
-          _findBestMatchForCommand(queryLower, _commandMap);
-
-      if (matchedCommand != null) {
-        switch (_commandMap[matchedCommand]) {
-          case 'itemsAdded':
-            result = await _handleItemsAddedQuery(
-                targetDate ?? DateTime.now(), allItems);
-            break;
-          case 'itemsTaken':
-            result = await _handleItemsTakenQuery(targetDate ?? DateTime.now());
-            break;
-          case 'lowStock':
-            result = await _handleLowStockQuery(allItems);
-            break;
-          case 'mostTaken':
-            result = await _handleMostTakenItemsQuery();
-            break;
-          case 'whoTookItems':
-            result = await _handleWhoTookItemsQuery(
-                allItems, targetDate ?? DateTime.now());
-            break;
-          case 'availableItems':
-            result = await _handleAvailableItemsQuery(allItems);
-            break;
-          case 'itemStock':
-            result = await _handleItemStockQuery(queryLower);
-            break;
-          case 'expiringSoon':
-            result = await _handleItemsExpiringSoon(allItems);
-            break;
-          case 'mostActiveStaff':
-            result = await _handleMostActiveStaffQuery();
-            break;
-          default:
-            result = "Maaf, saya tidak mengerti pertanyaan Anda.";
-        }
+      // Check for 'itemStock' command first, as it needs specific pattern matching
+      if (queryLower.contains('stok') ||
+          queryLower.contains('stock') ||
+          queryLower.contains('jumlah') ||
+          queryLower.contains('berapa') ||
+          queryLower.contains('sisa')) {
+        result = await _handleItemStockQuery(queryLower);
       } else {
-        result =
-            "Maaf, saya tidak mengerti pertanyaan Anda. Silakan coba pertanyaan lain atau gunakan Perintah Cepat.";
+        String? matchedCommand =
+            _findBestMatchForCommand(queryLower, _commandMap);
+
+        if (matchedCommand != null) {
+          switch (_commandMap[matchedCommand]) {
+            case 'itemsAdded':
+              result = await _handleItemsAddedQuery(
+                  targetDate ?? DateTime.now(), allItems);
+              break;
+            case 'itemsTaken':
+              result =
+                  await _handleItemsTakenQuery(targetDate ?? DateTime.now());
+              break;
+            case 'lowStock':
+              result = await _handleLowStockQuery(allItems);
+              break;
+            case 'mostTaken':
+              result = await _handleMostTakenItemsQuery();
+              break;
+            case 'whoTookItems':
+              result = await _handleWhoTookItemsQuery(
+                  allItems, targetDate ?? DateTime.now());
+              break;
+            case 'availableItems':
+              result = await _handleAvailableItemsQuery(allItems);
+              break;
+            case 'expiringSoon':
+              result = await _handleItemsExpiringSoon(allItems);
+              break;
+            case 'mostActiveStaff':
+              result = await _handleMostActiveStaffQuery();
+              break;
+            default:
+              result = "Maaf, saya tidak mengerti pertanyaan Anda.";
+          }
+        } else {
+          result =
+              "Maaf, saya tidak mengerti pertanyaan Anda. Silakan coba pertanyaan lain atau gunakan Perintah Cepat.";
+        }
       }
     } catch (e) {
       log("Error processing query: $e");
@@ -425,7 +432,8 @@ class _AiPageState extends State<AiPage> {
     final allItems = await _fetchAllItems();
     final itemNames = allItems.map((e) => e.name).toList();
     final queryWithoutKeywords = query.replaceAll(
-        RegExp(r'(stok|jumlah|berapa|cek|sisa)\s*', caseSensitive: false), '');
+        RegExp(r'(stok|stock|jumlah|berapa|cek|sisa)\s*', caseSensitive: false),
+        '');
 
     final String? bestMatch = _findBestMatchForItems(
         queryWithoutKeywords.trim(), itemNames,
@@ -878,6 +886,7 @@ class _AiPageState extends State<AiPage> {
     }
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: const Color(0xFF1E1E1E),
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -909,89 +918,108 @@ class _AiPageState extends State<AiPage> {
             icon: const Icon(Icons.list_alt, color: Colors.white),
             tooltip: "Perintah Cepat",
             onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                builder: (_) => Container(
-                  padding: const EdgeInsets.all(16),
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: quickCommands.entries.map((entry) {
-                      return ListTile(
-                        title: Text(entry.key),
-                        onTap: () {
-                          Navigator.pop(context);
-                          handleQuickCommand(entry.value);
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ),
-              );
+              _scaffoldKey.currentState?.openEndDrawer();
             },
           ),
         ],
       ),
-      body: SafeArea(
-        child: Column(
+      endDrawer: Drawer(
+        width: MediaQuery.of(context).size.width * 0.7,
+        child: ListView(
+          padding: EdgeInsets.zero,
           children: [
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(12),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  return _buildMessageBubble(_messages[index]);
-                },
+            const DrawerHeader(
+              decoration: BoxDecoration(
+                color: Colors.indigo,
+              ),
+              child: Text(
+                'Perintah Cepat',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      onSubmitted:
-                          _isSending ? null : (value) => _processQuery(value),
-                      decoration: InputDecoration(
-                        hintText: 'Tulis pertanyaanmu...',
-                        filled: true,
-                        fillColor: Colors.grey[200],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+            ...quickCommands.entries.map((entry) {
+              return ListTile(
+                title: Text(entry.key),
+                onTap: () {
+                  Navigator.pop(context); // Close the drawer
+                  handleQuickCommand(entry.value);
+                },
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: GestureDetector(
+          onHorizontalDragEnd: (details) {
+            if (details.primaryVelocity! < 0) {
+              _scaffoldKey.currentState?.openEndDrawer();
+            }
+          },
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _messages.length,
+                  itemBuilder: (context, index) {
+                    return _buildMessageBubble(_messages[index]);
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        onSubmitted:
+                            _isSending ? null : (value) => _processQuery(value),
+                        decoration: InputDecoration(
+                          hintText: 'Tulis pertanyaanmu...',
+                          filled: true,
+                          fillColor: Colors.grey[200],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo,
-                      padding: const EdgeInsets.all(14),
-                      shape: const CircleBorder(),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        padding: const EdgeInsets.all(14),
+                        shape: const CircleBorder(),
+                      ),
+                      onPressed: _isSending
+                          ? null
+                          : () => _processQuery(_controller.text),
+                      child: _isSending
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.send, color: Colors.white),
                     ),
-                    onPressed: _isSending
-                        ? null
-                        : () => _processQuery(_controller.text),
-                    child: _isSending
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.send, color: Colors.white),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
