@@ -246,7 +246,7 @@ class _AiPageState extends State<AiPage> {
     return v1[b.length];
   }
 
-  /// Menemukan kata kunci yang paling mirip untuk nama barang.
+  // Menemukan kata kunci yang paling mirip untuk nama barang.
   String? _findBestMatchForItems(String query, List<String> targets,
       {double threshold = 0.5}) {
     String lowerQuery = query.toLowerCase().trim();
@@ -294,49 +294,44 @@ class _AiPageState extends State<AiPage> {
     String lowerQuery = query.toLowerCase().trim();
     String? bestMatch;
     double highestScore = 0;
-    double threshold = 0.5;
 
     final commandKeys = commandMap.keys.toList();
-
     // Sort keys by length descending to prioritize more specific commands
     commandKeys.sort((a, b) => b.length.compareTo(a.length));
 
     for (var target in commandKeys) {
       String lowerTarget = target.toLowerCase();
 
-      // Calculate Jaccard similarity for overall word presence
-      final queryWords = lowerQuery.split(' ').toSet();
-      final targetWords = lowerTarget.split(' ').toSet();
-      final intersectionSize = queryWords.intersection(targetWords).length;
-      final unionSize = queryWords.union(targetWords).length;
+      // Calculate normalized Levenshtein distance
+      final distance = _calculateLevenshteinDistance(lowerQuery, lowerTarget);
+      final normalizedDistance = 1.0 - (distance / lowerTarget.length);
 
-      if (unionSize == 0) continue; // Avoid division by zero
-
-      double jaccardSimilarity = intersectionSize / unionSize;
-
-      // Use a custom weight for important keywords
-      double weightedScore = jaccardSimilarity;
-      if (queryWords.contains('masuk') && targetWords.contains('masuk')) {
-        weightedScore += 0.5;
-      }
-      if (queryWords.contains('keluar') && targetWords.contains('keluar')) {
-        weightedScore += 0.5;
-      }
-      if (queryWords.contains('sering') && targetWords.contains('sering')) {
-        weightedScore += 0.5;
-      }
-      if (queryWords.contains('rendah') && targetWords.contains('rendah')) {
-        weightedScore += 0.5;
-      }
-      if (queryWords.contains('kadaluwarsa') ||
-          queryWords.contains('expired')) {
-        if (targetWords.contains('kedaluwarsa')) {
-          weightedScore += 0.5;
+      // Weighting for important keywords
+      double keywordWeight = 0;
+      final importantKeywords = [
+        'masuk',
+        'keluar',
+        'sering',
+        'rendah',
+        'kadaluwarsa',
+        'expired',
+        'stok',
+        'ambil'
+      ];
+      for (var keyword in importantKeywords) {
+        if (lowerQuery.contains(keyword) && lowerTarget.contains(keyword)) {
+          keywordWeight +=
+              0.2; // Add a significant boost for matching key words
         }
       }
 
-      if (weightedScore > highestScore && weightedScore > threshold) {
-        highestScore = weightedScore;
+      // Combine scores
+      double score = normalizedDistance + keywordWeight;
+
+      // Final score check
+      if (score > highestScore && score > 0.6) {
+        // A higher threshold to ensure better confidence
+        highestScore = score;
         bestMatch = target;
       }
     }
@@ -408,7 +403,8 @@ class _AiPageState extends State<AiPage> {
             result = "Maaf, saya tidak mengerti pertanyaan Anda.";
         }
       } else {
-        result = await _handleItemStockQuery(queryLower);
+        result =
+            "Maaf, saya tidak mengerti pertanyaan Anda. Silakan coba pertanyaan lain atau gunakan Perintah Cepat.";
       }
     } catch (e) {
       log("Error processing query: $e");
@@ -575,12 +571,11 @@ class _AiPageState extends State<AiPage> {
         ..sort((a, b) => b.value.compareTo(a.value));
 
       final topItems = sortedItems
-          .take(5)
-          .map((e) => "- **${e.key}** (Frekuensi: ${e.value} kali pengambilan)")
+          .take(10)
+          .map((e) => "- **${e.key}** (${e.value} unit diambil)")
           .join("\n");
 
-      final startOfMonthFormatted = DateFormat('dd MMMM').format(startOfMonth);
-      return "Dari tanggal $startOfMonthFormatted sampai $formattedDate, berikut adalah top 5 barang yang paling sering diambil:\n\n$topItems";
+      return "Barang yang sering diambil dari tanggal 1 ${DateFormat('MMMM yyyy').format(now)} sampai $formattedDate ini adalah:\n$topItems";
     }
     return "Belum ada riwayat pengambilan barang bulan ini.";
   }
@@ -621,7 +616,7 @@ class _AiPageState extends State<AiPage> {
           }
 
           logOutput +=
-              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
+              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
         return logOutput;
       }
