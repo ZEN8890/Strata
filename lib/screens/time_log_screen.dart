@@ -623,7 +623,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
         headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
           return <Widget>[
             SliverAppBar(
-              automaticallyImplyLeading: false, // Perbaikan di sini
+              automaticallyImplyLeading: false,
               expandedHeight: _filterSectionHeight > 0
                   ? _filterSectionHeight + 20.0
                   : 450.0,
@@ -1060,6 +1060,18 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                             '${DateFormat('dd-MM-yyyy').format(logEntry.timestamp)} '
                             '${DateFormat('HH:mm:ss').format(logEntry.timestamp)}';
 
+                        String stockText;
+                        Color stockColor;
+                        if (logEntry.remainingStock != null) {
+                          stockText = 'Sisa Stok: ${logEntry.remainingStock}';
+                          stockColor = (logEntry.remainingStock == 0)
+                              ? Colors.red
+                              : Colors.green[800]!;
+                        } else {
+                          stockText = 'Jenis Item: Tidak Bisa Dihitung';
+                          stockColor = Colors.blueGrey;
+                        }
+
                         return Card(
                           margin: const EdgeInsets.symmetric(
                               horizontal: 0, vertical: 10.0),
@@ -1120,79 +1132,20 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 6),
-                                FutureBuilder<QuerySnapshot>(
-                                  future: _firestore
-                                      .collection('items')
-                                      .where('barcode',
-                                          isEqualTo: logEntry.barcode)
-                                      .limit(1)
-                                      .get(),
-                                  builder: (context, itemSnapshot) {
-                                    if (itemSnapshot.connectionState ==
-                                        ConnectionState.waiting) {
-                                      return const Padding(
-                                        padding:
-                                            EdgeInsets.symmetric(vertical: 4.0),
-                                        child: SizedBox(
-                                          width: 120,
-                                          height: 16,
-                                          child: LinearProgressIndicator(),
-                                        ),
-                                      );
-                                    }
-                                    if (itemSnapshot.hasError) {
-                                      log('Error fetching item for barcode ${logEntry.barcode}: ${itemSnapshot.error}');
-                                      return const Text('Sisa Stok: Error',
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.inventory_2,
+                                          size: 20, color: Colors.blueGrey),
+                                      const SizedBox(width: 10),
+                                      Text(stockText,
                                           style: TextStyle(
-                                              fontSize: 14, color: Colors.red));
-                                    }
-                                    if (itemSnapshot.hasData &&
-                                        itemSnapshot.data!.docs.isNotEmpty) {
-                                      final itemData =
-                                          itemSnapshot.data!.docs.first.data()
-                                              as Map<String, dynamic>;
-                                      final remainingStock =
-                                          itemData['quantityOrRemark'];
-                                      String stockText = '';
-                                      Color stockColor = Colors.green[800]!;
-
-                                      if (remainingStock is int) {
-                                        stockText =
-                                            'Sisa Stok: $remainingStock';
-                                        if (remainingStock == 0) {
-                                          stockColor = Colors.red;
-                                        }
-                                      } else {
-                                        stockText =
-                                            'Jenis Item: Tidak Bisa Dihitung';
-                                      }
-                                      return Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 4.0),
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.inventory_2,
-                                                size: 20,
-                                                color: Colors.blueGrey),
-                                            const SizedBox(width: 10),
-                                            Text(stockText,
-                                                style: TextStyle(
-                                                    fontSize: 16,
-                                                    color: stockColor,
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                          ],
-                                        ),
-                                      );
-                                    }
-                                    return const Padding(
-                                      padding: EdgeInsets.only(top: 4.0),
-                                      child: Text('Sisa Stok: Tidak Ditemukan',
-                                          style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.orange)),
-                                    );
-                                  },
+                                              fontSize: 16,
+                                              color: stockColor,
+                                              fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
                                 ),
                                 const SizedBox(height: 6),
                                 Row(

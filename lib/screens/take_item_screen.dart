@@ -8,7 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:Strata_lite/models/item.dart';
 import 'package:Strata_lite/models/log_entry.dart';
 import 'package:another_flushbar/flushbar.dart';
-import 'package:audioplayers/audioplayers.dart'; // Import paket audioplayers
+import 'package:audioplayers/audioplayers.dart';
 
 class TakeItemScreen extends StatefulWidget {
   const TakeItemScreen({super.key});
@@ -35,7 +35,6 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Deklarasi AudioPlayer
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
@@ -52,19 +51,17 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
     _barcodeController.dispose();
     _quantityController.dispose();
     _remarksController.dispose();
-    _scannerController?.stop(); // Pastikan scanner dihentikan
+    _scannerController?.stop();
     _scannerController?.dispose();
     _alertTimer?.cancel();
     _notificationTimer?.cancel();
-    _audioPlayer.dispose(); // Bersihkan AudioPlayer
+    _audioPlayer.dispose();
     super.dispose();
   }
 
-  // Fungsi untuk memutar suara saat scan berhasil
   Future<void> _playScanSound() async {
     try {
-      await _audioPlayer
-          .play(AssetSource('sounds/Beep.mp3')); // Ganti nama file jika berbeda
+      await _audioPlayer.play(AssetSource('sounds/Beep.mp3'));
     } catch (e) {
       log('Error playing sound: $e');
     }
@@ -140,7 +137,6 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
         _showNotification(
             'Barcode Ditemukan', 'Barcode EAN-13 terdeteksi: $barcodeValue');
 
-        // Memutar suara saat barcode berhasil dideteksi
         _playScanSound();
 
         setState(() {
@@ -229,36 +225,30 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
           'quantityOrRemark': FieldValue.increment(-quantityTaken),
         });
 
-        await _firestore
-            .collection('items')
-            .doc(_scannedItem!.id)
-            .get()
-            .then((doc) {
-          if (doc.exists) {
-            setState(() {
-              _scannedItem = Item.fromFirestore(
-                  doc.data() as Map<String, dynamic>, doc.id);
-            });
-          }
-        });
+        // Ambil dokumen terbaru setelah update
+        DocumentSnapshot updatedItemDoc =
+            await _firestore.collection('items').doc(_scannedItem!.id).get();
+        int? updatedStock =
+            (updatedItemDoc.data() as Map<String, dynamic>)['quantityOrRemark'];
 
         _showNotification('Stok Berhasil Dikurangi',
-            'Stok item "${_scannedItem!.name}" dikurangi sebanyak $quantityTaken. Sisa Stok: ${_scannedItem!.quantityOrRemark}',
+            'Stok item "${_scannedItem!.name}" dikurangi sebanyak $quantityTaken. Sisa Stok: $updatedStock',
             isError: false);
+
+        await _addLogEntry(
+          _scannedItem!,
+          quantityTaken,
+          remarks: _remarksController.text.trim().isEmpty
+              ? null
+              : _remarksController.text.trim(),
+          remainingStock: updatedStock,
+        );
       } catch (e) {
         _showNotification('Gagal Mengurangi Stok', 'Gagal mengurangi stok: $e',
             isError: true);
         log('Error reducing stock: $e');
         return;
       }
-
-      await _addLogEntry(
-        _scannedItem!,
-        quantityTaken,
-        remarks: _remarksController.text.trim().isEmpty
-            ? null
-            : _remarksController.text.trim(),
-      );
     } else {
       String remarks = _remarksController.text.trim();
       if (remarks.isEmpty) {
@@ -283,7 +273,7 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
   }
 
   Future<void> _addLogEntry(Item item, dynamic quantityOrRemark,
-      {String? remarks}) async {
+      {String? remarks, int? remainingStock}) async {
     User? currentUser = _auth.currentUser;
     String staffName = currentUser?.email ?? 'Unknown User';
     String staffDepartment = 'Unknown Department';
@@ -311,6 +301,7 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
       staffName: staffName,
       staffDepartment: staffDepartment,
       remarks: remarks,
+      remainingStock: remainingStock,
     );
 
     try {
@@ -451,10 +442,9 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
                           hintText: 'Contoh: Untuk P3K di ruang rapat',
                         ),
                         maxLines: 3,
-                        textInputAction:
-                            TextInputAction.done, // Tambahan di sini
+                        textInputAction: TextInputAction.done,
                         onSubmitted: (value) {
-                          FocusScope.of(context).unfocus(); // Tambahan di sini
+                          FocusScope.of(context).unfocus();
                         },
                       ),
                     const SizedBox(height: 20),

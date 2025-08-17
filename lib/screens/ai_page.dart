@@ -7,6 +7,7 @@ import 'package:animated_text_kit/animated_text_kit.dart';
 import 'dart:developer';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../models/item.dart';
+import '../models/log_entry.dart';
 
 class AiPage extends StatefulWidget {
   const AiPage({super.key});
@@ -441,7 +442,7 @@ class _AiPageState extends State<AiPage> {
             "- **${item.name}** ($quantityInfo) pada ${DateFormat('HH:mm').format(item.createdAt)}\n";
       }
 
-      return "Barang yang masuk pada **${DateFormat('dd MMMM yyyy').format(date)}** ($totalItems item, total $totalQuantity unit):\n\n$details";
+      return "Barang yang masuk pada **${DateFormat('dd MMMM yyyy').format(date)}** ($totalItems jenis item, total $totalQuantity unit):\n\n$details";
     }
     return "Tidak ada barang yang masuk pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
   }
@@ -519,6 +520,7 @@ class _AiPageState extends State<AiPage> {
   Future<String> _handleMostTakenItemsQuery() async {
     final now = DateTime.now();
     final startOfMonth = DateTime(now.year, now.month, 1);
+    final formattedDate = DateFormat('dd MMMM yyyy').format(now);
 
     final logSnapshot = await _firestore
         .collection('log_entries')
@@ -529,9 +531,10 @@ class _AiPageState extends State<AiPage> {
     final itemCounts = <String, int>{};
     for (var doc in logSnapshot.docs) {
       final data = doc.data();
-      if (data.containsKey('itemName')) {
+      if (data.containsKey('itemName') && data['quantityOrRemark'] is int) {
         final itemName = data['itemName'] as String;
-        itemCounts[itemName] = (itemCounts[itemName] ?? 0) + 1;
+        final quantity = (data['quantityOrRemark'] as num).toInt();
+        itemCounts[itemName] = (itemCounts[itemName] ?? 0) + quantity;
       }
     }
 
@@ -541,10 +544,10 @@ class _AiPageState extends State<AiPage> {
 
       final topItems = sortedItems
           .take(10)
-          .map((e) => "- **${e.key}** (${e.value} kali)")
+          .map((e) => "- **${e.key}** (${e.value} unit diambil)")
           .join("\n");
 
-      return "Berikut adalah 10 item yang paling sering diambil bulan ini:\n$topItems";
+      return "Barang yang sering diambil dari tanggal 1 ${DateFormat('MMMM yyyy').format(now)} sampai $formattedDate ini adalah:\n$topItems";
     }
     return "Belum ada riwayat pengambilan barang bulan ini.";
   }
@@ -562,32 +565,30 @@ class _AiPageState extends State<AiPage> {
           .collection('log_entries')
           .where('timestamp', isGreaterThanOrEqualTo: startOfDate)
           .where('timestamp', isLessThanOrEqualTo: endOfDate)
+          .orderBy('timestamp', descending: true)
           .get();
 
       if (logSnapshot.docs.isNotEmpty) {
         String logOutput =
             "Barang yang diambil pada **${DateFormat('dd MMMM yyyy').format(date)}**:\n\n";
         for (var doc in logSnapshot.docs) {
-          final data = doc.data();
-          final userName = data['staffName'] as String? ?? 'Tidak Diketahui';
-          final itemName = data['itemName'] as String? ?? 'Tidak Diketahui';
-          final quantity = (data['quantityOrRemark'] as num?)?.toInt() ?? 0;
-          final logDate = (data['timestamp'] as Timestamp?)?.toDate();
+          final logEntry = LogEntry.fromFirestore(doc.data(), doc.id);
+          final userName = logEntry.staffName;
+          final itemName = logEntry.itemName;
+          final quantity = logEntry.quantityOrRemark;
+          final formattedDate =
+              DateFormat('dd-MM-yyyy HH:mm').format(logEntry.timestamp);
+          final remainingStock = logEntry.remainingStock;
 
-          String formattedDate = logDate != null
-              ? DateFormat('dd-MM-yyyy HH:mm').format(logDate)
-              : 'Tanggal tidak valid';
-
-          final itemData =
-              allItems.firstWhereOrNull((item) => item.name == itemName);
-          final stockInfo = itemData != null
-              ? (itemData.quantityOrRemark is int
-                  ? "Sisa Stok: ${itemData.quantityOrRemark}"
-                  : "Stok: Tidak Terhitung")
-              : "Stok tidak ditemukan.";
+          String stockInfo;
+          if (remainingStock != null) {
+            stockInfo = "Sisa Stok: $remainingStock";
+          } else {
+            stockInfo = "Stok: Tidak Terhitung";
+          }
 
           logOutput +=
-              "• **$itemName** diambil oleh **$userName** ($quantity unit) pada $formattedDate.\n  - $stockInfo\n\n";
+              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
         return logOutput;
       }
@@ -776,7 +777,6 @@ class _AiPageState extends State<AiPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Definisi perintah cepat dengan label dan kueri internal yang unik
     final Map<String, String> quickCommands = {
       'Barang apa saja yang masuk hari ini?': 'Barang masuk hari ini',
       'Barang yang keluar hari ini?': 'Barang keluar hari ini',
