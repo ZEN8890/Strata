@@ -26,30 +26,25 @@ class _AiPageState extends State<AiPage> {
   bool _isSending = false;
 
   final Map<String, String> _commandMap = {
-    'masuk': 'itemsAdded',
-    'barang masuk': 'itemsAdded',
-    'barang yang masuk': 'itemsAdded',
-    'ditambahkan': 'itemsAdded',
-    'keluar': 'itemsTaken',
-    'barang keluar': 'itemsTaken',
-    'ambil': 'itemsTaken',
-    'diambil': 'itemsTaken',
-    'stok rendah': 'lowStock',
-    'stok sedikit': 'lowStock',
-    'paling sering diambil': 'mostTaken',
-    'siapa yang mengambil': 'whoTookItems',
-    'siapa yang ambil': 'whoTookItems',
+    'barang masuk hari ini': 'itemsAdded',
+    'barang yang masuk hari ini': 'itemsAdded',
+    'barang keluar hari ini': 'itemsTaken',
+    'barang yang keluar hari ini': 'itemsTaken',
+    'barang paling sering diambil bulan ini': 'mostTaken',
+    'barang yang paling sering diambil bulan ini': 'mostTaken',
+    'item dengan stok rendah': 'lowStock',
     'item list': 'availableItems',
     'apa saja yang tersedia': 'availableItems',
+    'barang apa yang akan kedaluwarsa': 'expiringSoon',
+    'barang yang akan kedaluwarsa': 'expiringSoon',
+    'siapa yang mengambil barang hari ini': 'whoTookItems',
+    'siapa yang mengambil barang': 'whoTookItems',
+    'siapa staf paling aktif ambil barang': 'mostActiveStaff',
+    'staf paling aktif': 'mostActiveStaff',
     'stok barang': 'itemStock',
     'cek stok': 'itemStock',
     'berapa stok': 'itemStock',
     'sisa stok': 'itemStock',
-    'akan kedaluwarsa': 'expiringSoon',
-    'barang kedaluwarsa': 'expiringSoon',
-    'barang expired': 'expiringSoon',
-    'staf paling aktif': 'mostActiveStaff',
-    'siapa staf paling aktif ambil barang': 'mostActiveStaff',
   };
 
   final Map<String, int> _monthSynonyms = {
@@ -251,8 +246,8 @@ class _AiPageState extends State<AiPage> {
     return v1[b.length];
   }
 
-  /// Menemukan kata kunci yang paling mirip dengan kueri pengguna.
-  String? _findBestMatch(String query, List<String> targets,
+  /// Menemukan kata kunci yang paling mirip untuk nama barang.
+  String? _findBestMatchForItems(String query, List<String> targets,
       {double threshold = 0.5}) {
     String lowerQuery = query.toLowerCase().trim();
     String? bestMatch;
@@ -293,6 +288,61 @@ class _AiPageState extends State<AiPage> {
     return bestMatch;
   }
 
+  // An advanced fuzzy matching algorithm with weighted scoring for commands
+  String? _findBestMatchForCommand(
+      String query, Map<String, String> commandMap) {
+    String lowerQuery = query.toLowerCase().trim();
+    String? bestMatch;
+    double highestScore = 0;
+    double threshold = 0.5;
+
+    final commandKeys = commandMap.keys.toList();
+
+    // Sort keys by length descending to prioritize more specific commands
+    commandKeys.sort((a, b) => b.length.compareTo(a.length));
+
+    for (var target in commandKeys) {
+      String lowerTarget = target.toLowerCase();
+
+      // Calculate Jaccard similarity for overall word presence
+      final queryWords = lowerQuery.split(' ').toSet();
+      final targetWords = lowerTarget.split(' ').toSet();
+      final intersectionSize = queryWords.intersection(targetWords).length;
+      final unionSize = queryWords.union(targetWords).length;
+
+      if (unionSize == 0) continue; // Avoid division by zero
+
+      double jaccardSimilarity = intersectionSize / unionSize;
+
+      // Use a custom weight for important keywords
+      double weightedScore = jaccardSimilarity;
+      if (queryWords.contains('masuk') && targetWords.contains('masuk')) {
+        weightedScore += 0.5;
+      }
+      if (queryWords.contains('keluar') && targetWords.contains('keluar')) {
+        weightedScore += 0.5;
+      }
+      if (queryWords.contains('sering') && targetWords.contains('sering')) {
+        weightedScore += 0.5;
+      }
+      if (queryWords.contains('rendah') && targetWords.contains('rendah')) {
+        weightedScore += 0.5;
+      }
+      if (queryWords.contains('kadaluwarsa') ||
+          queryWords.contains('expired')) {
+        if (targetWords.contains('kedaluwarsa')) {
+          weightedScore += 0.5;
+        }
+      }
+
+      if (weightedScore > highestScore && weightedScore > threshold) {
+        highestScore = weightedScore;
+        bestMatch = target;
+      }
+    }
+    return bestMatch;
+  }
+
   /// Memproses kueri pengguna dan menghasilkan respons.
   Future<void> _processQuery(String query) async {
     final message = query.trim();
@@ -320,64 +370,45 @@ class _AiPageState extends State<AiPage> {
       final queryLower = query.toLowerCase();
       final targetDate = _parseDateFromQuery(queryLower);
 
-      if (queryLower.contains('barang masuk hari ini')) {
-        result = await _handleItemsAddedQuery(DateTime.now(), allItems);
-      } else if (queryLower.contains('barang keluar hari ini')) {
-        result = await _handleItemsTakenQuery(DateTime.now());
-      } else if (queryLower
-          .contains('barang paling sering diambil bulan ini')) {
-        result = await _handleMostTakenItemsQuery();
-      } else if (queryLower.contains('item dengan stok rendah')) {
-        result = await _handleLowStockQuery(allItems);
-      } else if (queryLower.contains('siapa yang mengambil barang hari ini')) {
-        result = await _handleWhoTookItemsQuery(allItems, DateTime.now());
-      } else if (queryLower.contains('apa saja yang tersedia')) {
-        result = await _handleAvailableItemsQuery(allItems);
-      } else if (queryLower.contains('barang apa yang akan kedaluwarsa')) {
-        result = await _handleItemsExpiringSoon(allItems);
-      } else {
-        final commandKeys = _commandMap.keys.toList();
-        String? matchedCommand =
-            _findBestMatch(queryLower, commandKeys, threshold: 0.6);
+      String? matchedCommand =
+          _findBestMatchForCommand(queryLower, _commandMap);
 
-        if (matchedCommand != null) {
-          switch (_commandMap[matchedCommand]) {
-            case 'itemsAdded':
-              result = await _handleItemsAddedQuery(
-                  targetDate ?? DateTime.now(), allItems);
-              break;
-            case 'itemsTaken':
-              result =
-                  await _handleItemsTakenQuery(targetDate ?? DateTime.now());
-              break;
-            case 'lowStock':
-              result = await _handleLowStockQuery(allItems);
-              break;
-            case 'mostTaken':
-              result = await _handleMostTakenItemsQuery();
-              break;
-            case 'whoTookItems':
-              result = await _handleWhoTookItemsQuery(
-                  allItems, targetDate ?? DateTime.now());
-              break;
-            case 'availableItems':
-              result = await _handleAvailableItemsQuery(allItems);
-              break;
-            case 'itemStock':
-              result = await _handleItemStockQuery(queryLower);
-              break;
-            case 'expiringSoon':
-              result = await _handleItemsExpiringSoon(allItems);
-              break;
-            case 'mostActiveStaff':
-              result = await _handleMostActiveStaffQuery();
-              break;
-            default:
-              result = "Maaf, saya tidak mengerti pertanyaan Anda.";
-          }
-        } else {
-          result = await _handleItemStockQuery(queryLower);
+      if (matchedCommand != null) {
+        switch (_commandMap[matchedCommand]) {
+          case 'itemsAdded':
+            result = await _handleItemsAddedQuery(
+                targetDate ?? DateTime.now(), allItems);
+            break;
+          case 'itemsTaken':
+            result = await _handleItemsTakenQuery(targetDate ?? DateTime.now());
+            break;
+          case 'lowStock':
+            result = await _handleLowStockQuery(allItems);
+            break;
+          case 'mostTaken':
+            result = await _handleMostTakenItemsQuery();
+            break;
+          case 'whoTookItems':
+            result = await _handleWhoTookItemsQuery(
+                allItems, targetDate ?? DateTime.now());
+            break;
+          case 'availableItems':
+            result = await _handleAvailableItemsQuery(allItems);
+            break;
+          case 'itemStock':
+            result = await _handleItemStockQuery(queryLower);
+            break;
+          case 'expiringSoon':
+            result = await _handleItemsExpiringSoon(allItems);
+            break;
+          case 'mostActiveStaff':
+            result = await _handleMostActiveStaffQuery();
+            break;
+          default:
+            result = "Maaf, saya tidak mengerti pertanyaan Anda.";
         }
+      } else {
+        result = await _handleItemStockQuery(queryLower);
       }
     } catch (e) {
       log("Error processing query: $e");
@@ -400,8 +431,9 @@ class _AiPageState extends State<AiPage> {
     final queryWithoutKeywords = query.replaceAll(
         RegExp(r'(stok|jumlah|berapa|cek|sisa)\s*', caseSensitive: false), '');
 
-    final String? bestMatch =
-        _findBestMatch(queryWithoutKeywords.trim(), itemNames, threshold: 0.6);
+    final String? bestMatch = _findBestMatchForItems(
+        queryWithoutKeywords.trim(), itemNames,
+        threshold: 0.6);
 
     if (bestMatch != null) {
       final item = allItems.firstWhere((element) => element.name == bestMatch);
@@ -543,11 +575,12 @@ class _AiPageState extends State<AiPage> {
         ..sort((a, b) => b.value.compareTo(a.value));
 
       final topItems = sortedItems
-          .take(10)
-          .map((e) => "- **${e.key}** (${e.value} unit diambil)")
+          .take(5)
+          .map((e) => "- **${e.key}** (Frekuensi: ${e.value} kali pengambilan)")
           .join("\n");
 
-      return "Barang yang sering diambil dari tanggal 1 ${DateFormat('MMMM yyyy').format(now)} sampai $formattedDate ini adalah:\n$topItems";
+      final startOfMonthFormatted = DateFormat('dd MMMM').format(startOfMonth);
+      return "Dari tanggal $startOfMonthFormatted sampai $formattedDate, berikut adalah top 5 barang yang paling sering diambil:\n\n$topItems";
     }
     return "Belum ada riwayat pengambilan barang bulan ini.";
   }
@@ -588,7 +621,7 @@ class _AiPageState extends State<AiPage> {
           }
 
           logOutput +=
-              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
+              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
         return logOutput;
       }
@@ -778,16 +811,76 @@ class _AiPageState extends State<AiPage> {
   @override
   Widget build(BuildContext context) {
     final Map<String, String> quickCommands = {
-      'Barang apa saja yang masuk hari ini?': 'Barang masuk hari ini',
-      'Barang yang keluar hari ini?': 'Barang keluar hari ini',
-      'Item dengan stok rendah': 'Item dengan stok rendah',
-      'Barang paling sering diambil bulan ini':
-          'Barang yang paling sering diambil bulan ini',
-      'Siapa yang mengambil barang hari ini?':
-          'Siapa yang mengambil barang hari ini?',
-      'Item List': 'Apa saja yang tersedia',
-      'Barang yang akan kedaluwarsa?': 'Barang apa yang akan kedaluwarsa?',
+      'Barang apa saja yang masuk hari ini?': 'itemsAdded',
+      'Barang yang keluar hari ini?': 'itemsTaken',
+      'Item dengan stok rendah': 'lowStock',
+      'Barang paling sering diambil bulan ini': 'mostTaken',
+      'Siapa yang mengambil barang hari ini?': 'whoTookItems',
+      'Item List': 'availableItems',
+      'Barang yang akan kedaluwarsa?': 'expiringSoon',
     };
+
+    Future<void> handleQuickCommand(String command) async {
+      String result;
+      setState(() {
+        _messages.add({
+          'sender': 'user',
+          'text':
+              quickCommands.entries.firstWhere((e) => e.value == command).key
+        });
+        _controller.clear();
+        _isSending = true;
+      });
+
+      _scrollToBottom();
+      _focusNode.requestFocus();
+
+      final loadingMessageIndex = _messages.length;
+      setState(() {
+        _messages.add({'sender': 'bot', 'text': '...'});
+      });
+      _scrollToBottom();
+
+      try {
+        final allItems = await _fetchAllItems();
+        switch (command) {
+          case 'itemsAdded':
+            result = await _handleItemsAddedQuery(DateTime.now(), allItems);
+            break;
+          case 'itemsTaken':
+            result = await _handleItemsTakenQuery(DateTime.now());
+            break;
+          case 'lowStock':
+            result = await _handleLowStockQuery(allItems);
+            break;
+          case 'mostTaken':
+            result = await _handleMostTakenItemsQuery();
+            break;
+          case 'whoTookItems':
+            result = await _handleWhoTookItemsQuery(allItems, DateTime.now());
+            break;
+          case 'availableItems':
+            result = await _handleAvailableItemsQuery(allItems);
+            break;
+          case 'expiringSoon':
+            result = await _handleItemsExpiringSoon(allItems);
+            break;
+          default:
+            result = "Maaf, perintah cepat tidak dikenali.";
+        }
+      } catch (e) {
+        log("Error processing quick command: $e");
+        result = "Terjadi kesalahan saat memproses permintaan Anda.";
+      }
+
+      setState(() {
+        _messages[loadingMessageIndex] = {'sender': 'bot', 'text': result};
+        _isSending = false;
+      });
+
+      _scrollToBottom();
+      _focusNode.requestFocus();
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E1E),
@@ -832,7 +925,7 @@ class _AiPageState extends State<AiPage> {
                         title: Text(entry.key),
                         onTap: () {
                           Navigator.pop(context);
-                          _processQuery(entry.value);
+                          handleQuickCommand(entry.value);
                         },
                       );
                     }).toList(),
