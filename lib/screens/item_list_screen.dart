@@ -250,6 +250,15 @@ class _ItemListScreenState extends State<ItemListScreen> {
                         onChanged: (String? newValue) {
                           setStateSB(() {
                             selectedClassification = newValue;
+                            if (newValue != null) {
+                              selectedItemsIds = allItems
+                                  .where(
+                                      (item) => item.classification == newValue)
+                                  .map((item) => item.id!)
+                                  .toList();
+                            } else {
+                              selectedItemsIds.clear();
+                            }
                           });
                         },
                       ),
@@ -267,7 +276,9 @@ class _ItemListScreenState extends State<ItemListScreen> {
                             onChanged: (bool? isChecked) {
                               setStateSB(() {
                                 if (isChecked == true && item.id != null) {
-                                  selectedItemsIds.add(item.id!);
+                                  if (!selectedItemsIds.contains(item.id!)) {
+                                    selectedItemsIds.add(item.id!);
+                                  }
                                 } else {
                                   selectedItemsIds.remove(item.id);
                                 }
@@ -286,24 +297,82 @@ class _ItemListScreenState extends State<ItemListScreen> {
                   child: const Text('Batal'),
                 ),
                 ElevatedButton(
-                  onPressed: selectedClassification != null &&
-                          selectedItemsIds.isNotEmpty
+                  onPressed: selectedClassification != null
                       ? () async {
-                          WriteBatch batch = _firestore.batch();
-                          for (var id in selectedItemsIds) {
-                            batch.update(_firestore.collection('items').doc(id),
-                                {'classification': selectedClassification});
-                          }
-                          await batch.commit();
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                            _showNotification('Berhasil',
-                                '${selectedItemsIds.length} item berhasil diklasifikasikan sebagai $selectedClassification!');
+                          try {
+                            WriteBatch batch = _firestore.batch();
+                            Set<String> newSelectedIds =
+                                selectedItemsIds.toSet();
+                            Set<String> currentIds = allItems
+                                .where((item) =>
+                                    item.classification ==
+                                    selectedClassification)
+                                .map((item) => item.id!)
+                                .toSet();
+
+                            Set<String> idsToAdd =
+                                newSelectedIds.difference(currentIds);
+                            Set<String> idsToRemove =
+                                currentIds.difference(newSelectedIds);
+
+                            for (var id in idsToAdd) {
+                              batch.update(
+                                  _firestore.collection('items').doc(id),
+                                  {'classification': selectedClassification});
+                            }
+                            for (var id in idsToRemove) {
+                              batch.update(
+                                  _firestore.collection('items').doc(id),
+                                  {'classification': null});
+                            }
+
+                            await batch.commit();
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                              _showNotification('Berhasil',
+                                  'Klasifikasi massal berhasil diperbarui!');
+                            }
+                          } catch (e) {
+                            _showNotification('Gagal',
+                                'Gagal memperbarui klasifikasi massal: $e',
+                                isError: true);
                           }
                         }
                       : null,
                   child: const Text('Simpan'),
                 ),
+                if (selectedClassification != null &&
+                    allItems.any((item) =>
+                        item.classification == selectedClassification))
+                  ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        WriteBatch batch = _firestore.batch();
+                        final itemsToRemove = allItems.where((item) =>
+                            item.classification == selectedClassification);
+                        for (var item in itemsToRemove) {
+                          batch.update(
+                              _firestore.collection('items').doc(item.id),
+                              {'classification': null});
+                        }
+                        await batch.commit();
+                        if (mounted) {
+                          Navigator.of(context).pop();
+                          _showNotification('Berhasil',
+                              'Semua item dari klasifikasi "$selectedClassification" telah dibersihkan.');
+                        }
+                      } catch (e) {
+                        _showNotification(
+                            'Gagal', 'Gagal membersihkan klasifikasi: $e',
+                            isError: true);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Bersihkan Semua'),
+                  ),
               ],
             );
           },
@@ -738,6 +807,137 @@ class _ItemListScreenState extends State<ItemListScreen> {
       _showNotification('Impor Gagal', 'Error saat impor data: $e',
           isError: true);
       log('Error saat impor data: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingImport = false);
+      }
+    }
+  }
+
+  Future<void> _importClassificationsFromExcel(BuildContext context) async {
+    if (!mounted) return;
+    setState(() => _isLoadingImport = true);
+    bool hasPermission = await _requestStoragePermission(context);
+    if (!hasPermission) {
+      if (mounted) setState(() => _isLoadingImport = false);
+      return;
+    }
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+          type: FileType.custom, allowedExtensions: ['xlsx', 'xls', 'csv']);
+      if (!context.mounted) return;
+      if (result != null && result.files.single.path != null) {
+        File file = File(result.files.single.path!);
+        var bytes = file.readAsBytesSync();
+        var excel = Excel.decodeBytes(bytes);
+
+        String? sheetName = excel.tables.keys.firstWhere(
+            (key) => key == 'Daftar Barang',
+            orElse: () => excel.tables.keys.first);
+        if (sheetName == null) {
+          _showNotification('Impor Gagal',
+              'File Excel tidak memiliki sheet yang dapat dibaca.',
+              isError: true);
+          if (mounted) setState(() => _isLoadingImport = false);
+          return;
+        }
+        Sheet table = excel.tables[sheetName]!;
+        final headerRow = table.rows.isNotEmpty
+            ? table.rows[0]
+                .map((cell) => cell?.value?.toString().trim())
+                .toList()
+            : [];
+        final classificationIndex = headerRow.indexOf('Klasifikasi');
+        final barcodeIndex = headerRow.indexOf('Barcode');
+
+        if (classificationIndex == -1 || barcodeIndex == -1) {
+          _showNotification('Impor Gagal',
+              'File Excel harus memiliki kolom "Klasifikasi" dan "Barcode".',
+              isError: true);
+          if (mounted) setState(() => _isLoadingImport = false);
+          return;
+        }
+
+        // Phase 1: Update the list of global classifications
+        Set<String> newClassifications = {};
+        for (int i = 1; i < (table.rows.length); i++) {
+          var row = table.rows[i];
+          String? classification = (row.length > classificationIndex &&
+                      row[classificationIndex] != null
+                  ? row[classificationIndex]?.value?.toString()
+                  : null) ??
+              '';
+          if (classification.isNotEmpty && classification != 'N/A') {
+            newClassifications.add(classification);
+          }
+        }
+
+        Set<String> combinedClassifications = Set.from(_classifications);
+        combinedClassifications.addAll(newClassifications);
+
+        await _firestore.collection('config').doc('classifications').set({
+          'list': combinedClassifications.toList(),
+        });
+
+        if (mounted) {
+          setState(() {
+            _classifications = combinedClassifications.toList();
+          });
+        }
+
+        // Phase 2: Update items with classifications from the Excel file
+        int updatedCount = 0;
+        WriteBatch batch = _firestore.batch();
+
+        for (int i = 1; i < (table.rows.length); i++) {
+          var row = table.rows[i];
+          String? barcode =
+              (row.length > barcodeIndex && row[barcodeIndex] != null
+                      ? row[barcodeIndex]?.value?.toString()
+                      : null) ??
+                  '';
+          String? classification = (row.length > classificationIndex &&
+                      row[classificationIndex] != null
+                  ? row[classificationIndex]?.value?.toString()
+                  : null) ??
+              '';
+
+          if (barcode.isNotEmpty) {
+            QuerySnapshot existingItems = await _firestore
+                .collection('items')
+                .where('barcode', isEqualTo: barcode)
+                .limit(1)
+                .get();
+
+            if (existingItems.docs.isNotEmpty) {
+              String itemId = existingItems.docs.first.id;
+              batch.update(_firestore.collection('items').doc(itemId), {
+                'classification': (classification != null &&
+                        classification.isNotEmpty &&
+                        classification != 'N/A')
+                    ? classification
+                    : null,
+              });
+              updatedCount++;
+            }
+          }
+        }
+
+        await batch.commit();
+
+        if (mounted) {
+          _showNotification('Berhasil',
+              '${newClassifications.length} klasifikasi baru diimpor dan $updatedCount item berhasil diperbarui.');
+        }
+      } else {
+        _showNotification('Impor Dibatalkan', 'Pemilihan file dibatalkan.',
+            isError: true);
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      _showNotification('Impor Gagal', 'Error saat impor klasifikasi: $e',
+          isError: true);
+      log('Error saat impor klasifikasi: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoadingImport = false);
@@ -1438,6 +1638,22 @@ class _ItemListScreenState extends State<ItemListScreen> {
                               label: const Text('Kelola Klasifikasi'),
                               style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blueAccent,
+                                  foregroundColor: Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _isLoadingImport
+                                  ? null
+                                  : () =>
+                                      _importClassificationsFromExcel(context),
+                              icon: const Icon(Icons.download),
+                              label: const Text('Impor Klasifikasi'),
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.purple,
                                   foregroundColor: Colors.white,
                                   padding:
                                       const EdgeInsets.symmetric(vertical: 12)),
