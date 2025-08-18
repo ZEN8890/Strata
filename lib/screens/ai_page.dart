@@ -1,4 +1,3 @@
-// Path: lib/screens/ai_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -294,18 +293,15 @@ class _AiPageState extends State<AiPage> {
     String? bestMatch;
     double highestScore = 0;
 
-    final commandKeys = commandMap.keys.toList();
-    // Sort keys by length descending to prioritize more specific commands
-    commandKeys.sort((a, b) => b.length.compareTo(a.length));
+    final commandKeys = commandMap.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
 
     for (var target in commandKeys) {
       String lowerTarget = target.toLowerCase();
 
-      // Calculate normalized Levenshtein distance
       final distance = _calculateLevenshteinDistance(lowerQuery, lowerTarget);
       final normalizedDistance = 1.0 - (distance / lowerTarget.length);
 
-      // Weighting for important keywords
       double keywordWeight = 0;
       final importantKeywords = [
         'masuk',
@@ -320,17 +316,13 @@ class _AiPageState extends State<AiPage> {
       ];
       for (var keyword in importantKeywords) {
         if (lowerQuery.contains(keyword) && lowerTarget.contains(keyword)) {
-          keywordWeight +=
-              0.2; // Add a significant boost for matching key words
+          keywordWeight += 0.2;
         }
       }
 
-      // Combine scores
       double score = normalizedDistance + keywordWeight;
 
-      // Final score check
       if (score > highestScore && score > 0.6) {
-        // A higher threshold to ensure better confidence
         highestScore = score;
         bestMatch = target;
       }
@@ -365,7 +357,6 @@ class _AiPageState extends State<AiPage> {
       final queryLower = query.toLowerCase();
       final targetDate = _parseDateFromQuery(queryLower);
 
-      // Check for 'itemStock' command first, as it needs specific pattern matching
       if (queryLower.contains('stok') ||
           queryLower.contains('stock') ||
           queryLower.contains('jumlah') ||
@@ -495,45 +486,37 @@ class _AiPageState extends State<AiPage> {
           .collection('log_entries')
           .where('timestamp', isGreaterThanOrEqualTo: startOfDate)
           .where('timestamp', isLessThanOrEqualTo: endOfDate)
+          .orderBy('timestamp', descending: true)
           .get();
 
       if (logSnapshot.docs.isNotEmpty) {
-        final Map<String, int> takenItems = {};
-        final Map<String, List<DateTime>> takenTimes = {};
-
+        String logOutput =
+            "Barang yang diambil pada **${DateFormat('dd MMMM yyyy').format(date)}**:\n\n";
         for (var doc in logSnapshot.docs) {
-          final data = doc.data();
-          if (data.containsKey('itemName') &&
-              data.containsKey('quantityOrRemark')) {
-            final itemName = data['itemName'] as String;
-            final quantity = (data['quantityOrRemark'] as num).toInt();
-            final timestamp = (data['timestamp'] as Timestamp).toDate();
+          final logEntry = LogEntry.fromFirestore(doc.data(), doc.id);
+          final userName = logEntry.staffName;
+          final itemName = logEntry.itemName;
+          final quantity = logEntry.quantityOrRemark;
+          final formattedDate =
+              DateFormat('dd-MM-yyyy HH:mm').format(logEntry.timestamp);
+          final remainingStock = logEntry.remainingStock;
 
-            takenItems[itemName] = (takenItems[itemName] ?? 0) + quantity;
-            takenTimes.putIfAbsent(itemName, () => []).add(timestamp);
+          String stockInfo;
+          if (remainingStock != null) {
+            stockInfo = "Sisa Stok: $remainingStock";
+          } else {
+            stockInfo = "Stok: Tidak Terhitung";
           }
+
+          logOutput +=
+              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
-
-        final totalItems = takenItems.length;
-        final totalQuantity =
-            takenItems.values.fold(0, (sum, quantity) => sum + quantity);
-
-        String details = "";
-        takenItems.forEach((itemName, quantity) {
-          final times = takenTimes[itemName]!
-              .map((time) => DateFormat('HH:mm').format(time))
-              .join(', ');
-          details +=
-              "- **$itemName** (Stok keluar: ${quantity} unit), diambil pada: $times\n";
-        });
-
-        final formattedDate = DateFormat('dd MMMM yyyy').format(date);
-        return "Barang yang keluar pada **$formattedDate** ($totalItems jenis item, total $totalQuantity unit):\n\n$details";
+        return logOutput;
       }
     } catch (e) {
-      log("Error fetching taken items: $e");
+      log("Error fetching who took items: $e");
     }
-    return "Tidak ada barang yang keluar pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
+    return "Tidak ada pengambilan barang pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
   }
 
   /// Handler untuk pertanyaan "Item dengan stok rendah".
@@ -624,7 +607,7 @@ class _AiPageState extends State<AiPage> {
           }
 
           logOutput +=
-              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
+              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
         return logOutput;
       }
@@ -944,7 +927,7 @@ class _AiPageState extends State<AiPage> {
               return ListTile(
                 title: Text(entry.key),
                 onTap: () {
-                  Navigator.pop(context); // Close the drawer
+                  Navigator.pop(context);
                   handleQuickCommand(entry.value);
                 },
               );
@@ -973,47 +956,60 @@ class _AiPageState extends State<AiPage> {
               ),
               Padding(
                 padding: const EdgeInsets.all(10),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focusNode,
-                        onSubmitted:
-                            _isSending ? null : (value) => _processQuery(value),
-                        decoration: InputDecoration(
-                          hintText: 'Tulis pertanyaanmu...',
-                          filled: true,
-                          fillColor: Colors.grey[200],
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.indigo,
-                        padding: const EdgeInsets.all(14),
-                        shape: const CircleBorder(),
-                      ),
-                      onPressed: _isSending
-                          ? null
-                          : () => _processQuery(_controller.text),
-                      child: _isSending
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            onSubmitted: _isSending
+                                ? null
+                                : (value) => _processQuery(value),
+                            decoration: InputDecoration(
+                              hintText: 'Tulis pertanyaanmu...',
+                              filled: true,
+                              fillColor: Colors.grey[200],
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
                               ),
-                            )
-                          : const Icon(Icons.send, color: Colors.white),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo,
+                            padding: const EdgeInsets.all(14),
+                            shape: const CircleBorder(),
+                          ),
+                          onPressed: _isSending
+                              ? null
+                              : () => _processQuery(_controller.text),
+                          child: _isSending
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.send, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      "Nevets bisa membuat kesalahan, jadi mohon bersabar jika terjadi eror",
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),

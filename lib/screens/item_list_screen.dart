@@ -1,4 +1,3 @@
-// Path: lib/screens/item_list_screen.dart
 import 'package:flutter/material.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1650,8 +1649,16 @@ class _ItemListScreenState extends State<ItemListScreen> {
                                   ? null
                                   : () =>
                                       _importClassificationsFromExcel(context),
-                              icon: const Icon(Icons.download),
-                              label: const Text('Impor Klasifikasi'),
+                              icon: _isLoadingImport
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          color: Colors.white, strokeWidth: 2))
+                                  : const Icon(Icons.download),
+                              label: Text(_isLoadingImport
+                                  ? 'Mengimpor...'
+                                  : 'Impor Klasifikasi'),
                               style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.purple,
                                   foregroundColor: Colors.white,

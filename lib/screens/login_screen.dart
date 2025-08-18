@@ -28,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRememberedUsername();
+    _loadRememberedPreferences();
   }
 
   @override
@@ -38,17 +38,30 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _loadRememberedUsername() async {
+  // MEMPERBARUI: Memuat status "Ingat Saya" dan nama pengguna yang diingat
+  void _loadRememberedPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final rememberedUsername = prefs.getString('remembered_username');
+    final rememberMeStatus = prefs.getBool('remember_me_status') ?? false;
+
     if (rememberedUsername != null && rememberedUsername.isNotEmpty) {
       setState(() {
         _usernameController.text = rememberedUsername;
-        _rememberMe = true;
       });
     }
+
+    setState(() {
+      _rememberMe = rememberMeStatus;
+    });
   }
 
+  // MEMPERBARUI: Menyimpan status "Ingat Saya" saat diubah
+  void _saveRememberMeStatus(bool status) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('remember_me_status', status);
+  }
+
+  // MEMPERBARUI: Menyimpan atau menghapus nama pengguna hanya jika statusnya benar
   void _saveRememberedUsername(String username) async {
     final prefs = await SharedPreferences.getInstance();
     if (_rememberMe) {
@@ -78,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
       User? user = userCredential.user;
 
       if (user != null) {
+        // Panggil fungsi yang diperbarui
         _saveRememberedUsername(username);
 
         if (!context.mounted) return;
@@ -102,7 +116,6 @@ class _LoginScreenState extends State<LoginScreen> {
           String name =
               (userDoc.data() as Map<String, dynamic>)['name'] ?? 'Guest';
 
-          // LOGIKA BARU UNTUK PERAN 'dev'
           if (role == 'admin' || role == 'dev') {
             _showMessage('Login Berhasil sebagai Admin: $name!');
             if (!context.mounted) return;
@@ -144,8 +157,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on FirebaseAuthException catch (e) {
       String message;
-      if (e.code == 'user-not-found') {
-        message = 'Tidak ada pengguna dengan username tersebut.';
+      if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
+        message = 'Tidak ada pengguna dengan username atau password tersebut.';
       } else if (e.code == 'wrong-password') {
         message = 'Password salah untuk username tersebut.';
       } else if (e.code == 'invalid-email') {
@@ -180,7 +193,6 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Tambahkan AnimatedTextKit untuk animasi teks "Strata"
               AnimatedTextKit(
                 animatedTexts: [
                   TypewriterAnimatedText(
@@ -198,13 +210,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 isRepeatingAnimation: false,
               ),
               const SizedBox(height: 10),
-              // Tambahkan logo di bawah teks "Strata"
               Image.asset(
                 'assets/Strata_logo.png',
                 height: 100,
               ),
               const SizedBox(height: 30),
-              // Ubah teks "Selamat Datang!" menjadi "Login"
               Text(
                 'Login',
                 style: TextStyle(
@@ -265,6 +275,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       onChanged: (bool? newValue) {
                         setState(() {
                           _rememberMe = newValue ?? false;
+                          // MEMPERBARUI: Menyimpan status "Ingat Saya" segera setelah diubah
+                          _saveRememberMeStatus(_rememberMe);
+                          // Hapus nama pengguna jika kotak centang tidak dicentang
+                          if (!_rememberMe) {
+                            _usernameController.clear();
+                            _saveRememberedUsername('');
+                          }
                         });
                       },
                       activeColor: Colors.blueAccent,
