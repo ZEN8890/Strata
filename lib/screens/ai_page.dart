@@ -8,6 +8,7 @@ import 'dart:developer';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../models/item.dart';
 import '../models/log_entry.dart';
+import '../models/added_log_entry.dart';
 
 class AiPage extends StatefulWidget {
   const AiPage({super.key});
@@ -105,7 +106,6 @@ class _AiPageState extends State<AiPage> {
                 '• Barang yang keluar hari ini/tanggal tertentu?\n'
                 '• Item dengan stok rendah\n'
                 '• Barang yang paling sering diambil\n'
-                '• Siapa yang mengambil barang hari ini/tanggal tertentu?\n'
                 '• Item List\n'
                 '• Berapa stok [nama barang]?\n'
                 '• Barang apa yang akan kedaluwarsa?\n'
@@ -364,54 +364,49 @@ class _AiPageState extends State<AiPage> {
       final allItems = await _fetchAllItems();
       final queryLower = query.toLowerCase();
       final targetDate = _parseDateFromQuery(queryLower);
+      String? matchedCommand =
+          _findBestMatchForCommand(queryLower, _commandMap);
 
-      // Check for 'itemStock' command first, as it needs specific pattern matching
-      if (queryLower.contains('stok') ||
+      if (matchedCommand != null) {
+        switch (_commandMap[matchedCommand]) {
+          case 'itemsAdded':
+            result = await _handleItemsAddedQuery(targetDate ?? DateTime.now());
+            break;
+          case 'itemsTaken':
+            result = await _handleItemsTakenQuery(targetDate ?? DateTime.now());
+            break;
+          case 'lowStock':
+            result = await _handleLowStockQuery(allItems);
+            break;
+          case 'mostTaken':
+            result = await _handleMostTakenItemsQuery();
+            break;
+          case 'whoTookItems':
+            result = await _handleWhoTookItemsQuery(
+                allItems, targetDate ?? DateTime.now());
+            break;
+          case 'availableItems':
+            result = await _handleAvailableItemsQuery(allItems);
+            break;
+          case 'expiringSoon':
+            result = await _handleItemsExpiringSoon(allItems);
+            break;
+          case 'mostActiveStaff':
+            result = await _handleMostActiveStaffQuery();
+            break;
+          default:
+            result =
+                "Maaf, saya tidak mengerti pertanyaan Anda. Silakan coba pertanyaan lain atau gunakan Perintah Cepat.";
+        }
+      } else if (queryLower.contains('stok') ||
           queryLower.contains('stock') ||
           queryLower.contains('jumlah') ||
           queryLower.contains('berapa') ||
           queryLower.contains('sisa')) {
         result = await _handleItemStockQuery(queryLower);
       } else {
-        String? matchedCommand =
-            _findBestMatchForCommand(queryLower, _commandMap);
-
-        if (matchedCommand != null) {
-          switch (_commandMap[matchedCommand]) {
-            case 'itemsAdded':
-              result = await _handleItemsAddedQuery(
-                  targetDate ?? DateTime.now(), allItems);
-              break;
-            case 'itemsTaken':
-              result =
-                  await _handleItemsTakenQuery(targetDate ?? DateTime.now());
-              break;
-            case 'lowStock':
-              result = await _handleLowStockQuery(allItems);
-              break;
-            case 'mostTaken':
-              result = await _handleMostTakenItemsQuery();
-              break;
-            case 'whoTookItems':
-              result = await _handleWhoTookItemsQuery(
-                  allItems, targetDate ?? DateTime.now());
-              break;
-            case 'availableItems':
-              result = await _handleAvailableItemsQuery(allItems);
-              break;
-            case 'expiringSoon':
-              result = await _handleItemsExpiringSoon(allItems);
-              break;
-            case 'mostActiveStaff':
-              result = await _handleMostActiveStaffQuery();
-              break;
-            default:
-              result = "Maaf, saya tidak mengerti pertanyaan Anda.";
-          }
-        } else {
-          result =
-              "Maaf, saya tidak mengerti pertanyaan Anda. Silakan coba pertanyaan lain atau gunakan Perintah Cepat.";
-        }
+        result =
+            "Maaf, saya tidak mengerti pertanyaan Anda. Silakan coba pertanyaan lain atau gunakan Perintah Cepat.";
       }
     } catch (e) {
       log("Error processing query: $e");
@@ -451,34 +446,51 @@ class _AiPageState extends State<AiPage> {
   }
 
   /// Handler untuk pertanyaan "Barang masuk".
-  Future<String> _handleItemsAddedQuery(
-      DateTime date, List<Item> allItems) async {
+  Future<String> _handleItemsAddedQuery(DateTime date) async {
     final startOfDate = DateTime(date.year, date.month, date.day);
     final endOfDate = startOfDate
         .add(const Duration(days: 1))
         .subtract(const Duration(seconds: 1));
-    final itemsAdded = allItems
-        .where((item) =>
-            item.createdAt.isAfter(startOfDate) &&
-            item.createdAt.isBefore(endOfDate))
-        .toList();
 
-    if (itemsAdded.isNotEmpty) {
-      final totalItems = itemsAdded.length;
-      final totalQuantity = itemsAdded
-          .where((e) => e.quantityOrRemark is int)
-          .fold(0, (sum, item) => sum + (item.quantityOrRemark as int));
+    try {
+      final addedLogSnapshot = await _firestore
+          .collection('added_log')
+          .where('timestamp', isGreaterThanOrEqualTo: startOfDate)
+          .where('timestamp', isLessThanOrEqualTo: endOfDate)
+          .get();
 
-      String details = "";
-      for (var item in itemsAdded) {
-        final quantityInfo = item.quantityOrRemark is int
-            ? "Stok masuk: ${item.quantityOrRemark}"
-            : "Stok masuk: N/A";
-        details +=
-            "- **${item.name}** ($quantityInfo) pada ${DateFormat('HH:mm').format(item.createdAt)}\n";
+      if (addedLogSnapshot.docs.isNotEmpty) {
+        final Map<String, int> addedItems = {};
+        final Map<String, List<DateTime>> addedTimes = {};
+
+        for (var doc in addedLogSnapshot.docs) {
+          final data = doc.data();
+          final itemName = data['itemName'] as String;
+          final quantity = (data['quantity'] as num).toInt();
+          final timestamp = (data['timestamp'] as Timestamp).toDate();
+
+          addedItems[itemName] = (addedItems[itemName] ?? 0) + quantity;
+          addedTimes.putIfAbsent(itemName, () => []).add(timestamp);
+        }
+
+        final totalTypes = addedItems.length;
+        final totalQuantity =
+            addedItems.values.fold(0, (sum, quantity) => sum + quantity);
+
+        String details = "";
+        addedItems.forEach((itemName, quantity) {
+          final times = addedTimes[itemName]!
+              .map((time) => DateFormat('HH:mm').format(time))
+              .join(', ');
+          details +=
+              "- **$itemName** (Stok masuk: ${quantity} unit), dimasukkan pada: $times\n";
+        });
+
+        final formattedDate = DateFormat('dd MMMM yyyy').format(date);
+        return "Barang yang masuk pada **$formattedDate** ($totalTypes jenis item, total $totalQuantity unit):\n\n$details";
       }
-
-      return "Barang yang masuk pada **${DateFormat('dd MMMM yyyy').format(date)}** ($totalItems jenis item, total $totalQuantity unit):\n\n$details";
+    } catch (e) {
+      log("Error fetching added items: $e");
     }
     return "Tidak ada barang yang masuk pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
   }
@@ -495,45 +507,37 @@ class _AiPageState extends State<AiPage> {
           .collection('log_entries')
           .where('timestamp', isGreaterThanOrEqualTo: startOfDate)
           .where('timestamp', isLessThanOrEqualTo: endOfDate)
+          .orderBy('timestamp', descending: true)
           .get();
 
       if (logSnapshot.docs.isNotEmpty) {
-        final Map<String, int> takenItems = {};
-        final Map<String, List<DateTime>> takenTimes = {};
-
+        String logOutput =
+            "Barang yang diambil pada **${DateFormat('dd MMMM yyyy').format(date)}**:\n\n";
         for (var doc in logSnapshot.docs) {
-          final data = doc.data();
-          if (data.containsKey('itemName') &&
-              data.containsKey('quantityOrRemark')) {
-            final itemName = data['itemName'] as String;
-            final quantity = (data['quantityOrRemark'] as num).toInt();
-            final timestamp = (data['timestamp'] as Timestamp).toDate();
+          final logEntry = LogEntry.fromFirestore(doc.data(), doc.id);
+          final userName = logEntry.staffName;
+          final itemName = logEntry.itemName;
+          final quantity = logEntry.quantityOrRemark;
+          final formattedDate =
+              DateFormat('dd-MM-yyyy HH:mm').format(logEntry.timestamp);
+          final remainingStock = logEntry.remainingStock;
 
-            takenItems[itemName] = (takenItems[itemName] ?? 0) + quantity;
-            takenTimes.putIfAbsent(itemName, () => []).add(timestamp);
+          String stockInfo;
+          if (remainingStock != null) {
+            stockInfo = "Sisa Stok: $remainingStock";
+          } else {
+            stockInfo = "Stok: Tidak Terhitung";
           }
+
+          logOutput +=
+              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
-
-        final totalItems = takenItems.length;
-        final totalQuantity =
-            takenItems.values.fold(0, (sum, quantity) => sum + quantity);
-
-        String details = "";
-        takenItems.forEach((itemName, quantity) {
-          final times = takenTimes[itemName]!
-              .map((time) => DateFormat('HH:mm').format(time))
-              .join(', ');
-          details +=
-              "- **$itemName** (Stok keluar: ${quantity} unit), diambil pada: $times\n";
-        });
-
-        final formattedDate = DateFormat('dd MMMM yyyy').format(date);
-        return "Barang yang keluar pada **$formattedDate** ($totalItems jenis item, total $totalQuantity unit):\n\n$details";
+        return logOutput;
       }
     } catch (e) {
-      log("Error fetching taken items: $e");
+      log("Error fetching who took items: $e");
     }
-    return "Tidak ada barang yang keluar pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
+    return "Tidak ada pengambilan barang pada **${DateFormat('dd MMMM yyyy').format(date)}**.";
   }
 
   /// Handler untuk pertanyaan "Item dengan stok rendah".
@@ -624,7 +628,7 @@ class _AiPageState extends State<AiPage> {
           }
 
           logOutput +=
-              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
+              "• **$itemName** diambil oleh **$userName** (${quantity} unit) pada $formattedDate.\n  - $stockInfo\n\n";
         }
         return logOutput;
       }
@@ -818,7 +822,6 @@ class _AiPageState extends State<AiPage> {
       'Barang yang keluar hari ini?': 'itemsTaken',
       'Item dengan stok rendah': 'lowStock',
       'Barang paling sering diambil bulan ini': 'mostTaken',
-      'Siapa yang mengambil barang hari ini?': 'whoTookItems',
       'Item List': 'availableItems',
       'Barang yang akan kedaluwarsa?': 'expiringSoon',
     };
@@ -848,7 +851,7 @@ class _AiPageState extends State<AiPage> {
         final allItems = await _fetchAllItems();
         switch (command) {
           case 'itemsAdded':
-            result = await _handleItemsAddedQuery(DateTime.now(), allItems);
+            result = await _handleItemsAddedQuery(DateTime.now());
             break;
           case 'itemsTaken':
             result = await _handleItemsTakenQuery(DateTime.now());
@@ -1018,6 +1021,14 @@ class _AiPageState extends State<AiPage> {
                   ],
                 ),
               ),
+              const SizedBox(height: 8),
+              const Center(
+                child: Text(
+                  "Nevets bisa membuat kesalahan",
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),

@@ -7,6 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:Strata_lite/models/item.dart';
 import 'package:another_flushbar/flushbar.dart';
 import 'package:intl/intl.dart';
+import 'package:audioplayers/audioplayers.dart';
+import '../models/added_log_entry.dart';
 
 class AddItemScreen extends StatefulWidget {
   const AddItemScreen({super.key});
@@ -28,8 +30,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   bool _isScanning = false;
   DateTime? _selectedExpiryDate;
   String? _selectedClassification;
+  final _audioPlayer = AudioPlayer();
 
-  // State baru untuk toggle
   bool _hasExpiryDate = false;
   bool _hasClassification = true;
 
@@ -57,7 +59,17 @@ class _AddItemScreenState extends State<AddItemScreen> {
     _expiryDateController.dispose();
     _scannerController?.dispose();
     _notificationTimer?.cancel();
+    _audioPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _playSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/Beep.mp3'));
+      log('Playing beep sound.');
+    } catch (e) {
+      log('Error playing sound: $e');
+    }
   }
 
   Future<void> _fetchClassifications() async {
@@ -202,6 +214,14 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
       await _firestore.collection('items').add(newItem.toFirestore());
 
+      if (_isQuantityBased) {
+        await _firestore.collection('added_log').add({
+          'itemName': itemName,
+          'quantity': quantityOrRemark,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      }
+
       _showNotification(
           'Berhasil!', 'Barang "${newItem.name}" berhasil ditambahkan!',
           isError: false);
@@ -257,7 +277,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
     });
   }
 
-  void _onBarcodeDetected(BarcodeCapture capture) {
+  void _onBarcodeDetected(BarcodeCapture capture) async {
     if (capture.barcodes.isNotEmpty) {
       final Barcode detectedBarcode = capture.barcodes.first;
       final String? barcodeValue = detectedBarcode.rawValue;
@@ -269,6 +289,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
         _barcodeController.text = barcodeValue;
         _showNotification('Barcode Terdeteksi', 'Barcode EAN-13: $barcodeValue',
             isError: false);
+        await _playSound();
 
         setState(() {
           _isScanning = false;
