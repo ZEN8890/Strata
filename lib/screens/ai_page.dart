@@ -1024,7 +1024,7 @@ class _AiPageState extends State<AiPage> {
               const SizedBox(height: 8),
               const Center(
                 child: Text(
-                  "Nevets bisa membuat kesalahan",
+                  "Nevets AI sedang dalam perkembangan",
                   style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ),
