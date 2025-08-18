@@ -213,14 +213,6 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('Log Pengambilan Barang'),
-              onTap: () {
-                _onItemTapped(3);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
               leading: const Icon(Icons.shopping_cart),
               title: const Text('Ambil Barang'),
               onTap: () {
