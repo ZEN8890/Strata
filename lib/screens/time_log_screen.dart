@@ -345,13 +345,15 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
       }
 
       sheetObject.appendRow([
+        TextCellValue('Tipe Log'), // Added
         TextCellValue('Nama Barang'),
         TextCellValue('Barcode'),
         TextCellValue('Kuantitas/Remarks'),
         TextCellValue('Tanggal & Waktu'),
         TextCellValue('Nama Staff'),
         TextCellValue('Departemen'),
-        TextCellValue('Remarks Pengambilan'),
+        TextCellValue('Remarks Tambahan'), // Changed
+        TextCellValue('Sisa Stok'), // Added
       ]);
 
       QuerySnapshot snapshot = await _firestore
@@ -430,7 +432,14 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
             '${logEntry.timestamp.minute.toString().padLeft(2, '0')}:'
             '${logEntry.timestamp.second.toString().padLeft(2, '0')}';
 
+        // Check if quantityOrRemark is int and is positive
+        String logType =
+            (logEntry.quantityOrRemark is int && logEntry.quantityOrRemark > 0)
+                ? 'Penambahan'
+                : 'Pengambilan';
+
         sheetObject.appendRow([
+          TextCellValue(logType), // Added
           TextCellValue(logEntry.itemName),
           TextCellValue(logEntry.barcode),
           TextCellValue(logEntry.quantityOrRemark.toString()),
@@ -438,18 +447,19 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
           TextCellValue(logEntry.staffName),
           TextCellValue(logEntry.staffDepartment),
           TextCellValue(logEntry.remarks ?? ''),
+          TextCellValue(logEntry.remainingStock?.toString() ?? '-'), // Added
         ]);
       }
 
-      if (defaultSheetName != 'Log Pengambilan Barang') {
-        excel.rename(defaultSheetName, 'Log Pengambilan Barang');
-        log('Sheet "$defaultSheetName" berhasil diubah namanya menjadi "Log Pengambilan Barang".');
+      if (defaultSheetName != 'Log Inventaris') {
+        excel.rename(defaultSheetName, 'Log Inventaris');
+        log('Sheet "$defaultSheetName" berhasil diubah namanya menjadi "Log Inventaris".');
       }
 
       List<int>? fileBytes = excel.save();
       if (fileBytes != null) {
         final String fileName =
-            'Log_Pengambilan_Strata_Lite_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+            'Log_Inventaris_Strata_Lite_${DateTime.now().millisecondsSinceEpoch}.xlsx';
 
         if (defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.macOS ||
@@ -934,9 +944,9 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: const Text(
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Text(
                 'Riwayat Pengambilan Barang:',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
@@ -1060,15 +1070,36 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                             '${DateFormat('dd-MM-yyyy').format(logEntry.timestamp)} '
                             '${DateFormat('HH:mm:ss').format(logEntry.timestamp)}';
 
-                        String stockText;
-                        Color stockColor;
+                        // Check if quantityOrRemark is int and is positive
+                        bool isAdding = logEntry.quantityOrRemark is int &&
+                            logEntry.quantityOrRemark > 0;
+                        Color logColor =
+                            isAdding ? Colors.green[50]! : Colors.red[50]!;
+                        Color logBorderColor =
+                            isAdding ? Colors.green : Colors.red;
+                        String logTitle =
+                            isAdding ? 'Penambahan Stok' : 'Pengambilan Stok';
+                        IconData logIcon = isAdding
+                            ? Icons.add_box_outlined
+                            : Icons.remove_circle_outline;
+
+                        String quantityText;
+                        if (logEntry.quantityOrRemark is int) {
+                          quantityText =
+                              logEntry.quantityOrRemark.abs().toString();
+                        } else {
+                          quantityText = logEntry.quantityOrRemark.toString();
+                        }
+
+                        String stockText = 'N/A';
+                        Color stockColor = Colors.grey;
                         if (logEntry.remainingStock != null) {
-                          stockText = 'Sisa Stok: ${logEntry.remainingStock}';
+                          stockText = logEntry.remainingStock.toString();
                           stockColor = (logEntry.remainingStock == 0)
                               ? Colors.red
                               : Colors.green[800]!;
                         } else {
-                          stockText = 'Jenis Item: Tidak Bisa Dihitung';
+                          stockText = 'Tidak Bisa Dihitung';
                           stockColor = Colors.blueGrey;
                         }
 
@@ -1079,15 +1110,30 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(15),
                             side: BorderSide(
-                                color: Colors.blueAccent.withOpacity(0.5),
+                                color: logBorderColor.withOpacity(0.5),
                                 width: 1.5),
                           ),
-                          color: Colors.blue[50],
+                          color: logColor,
                           child: Padding(
                             padding: const EdgeInsets.all(18.0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                Row(
+                                  children: [
+                                    Icon(logIcon,
+                                        size: 28, color: logBorderColor),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      logTitle,
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                          color: logBorderColor),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
                                 Text(
                                   'Nama Barang: ${logEntry.itemName}',
                                   style: TextStyle(
@@ -1112,10 +1158,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                                 const SizedBox(height: 6),
                                 Row(
                                   children: [
-                                    logEntry.quantityOrRemark is String &&
-                                            logEntry.quantityOrRemark
-                                                .toString()
-                                                .isNotEmpty
+                                    logEntry.quantityOrRemark is String
                                         ? const Icon(Icons.notes,
                                             size: 20, color: Colors.blueGrey)
                                         : const Icon(
@@ -1124,7 +1167,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                                             color: Colors.blueGrey),
                                     const SizedBox(width: 10),
                                     Text(
-                                      'Kuantitas/Remarks: ${logEntry.quantityOrRemark.toString()}',
+                                      'Kuantitas/Remarks: $quantityText',
                                       style: TextStyle(
                                           fontSize: 16,
                                           color: Colors.blueGrey[700]),
@@ -1139,7 +1182,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                                       const Icon(Icons.inventory_2,
                                           size: 20, color: Colors.blueGrey),
                                       const SizedBox(width: 10),
-                                      Text(stockText,
+                                      Text('Sisa Stok: $stockText',
                                           style: TextStyle(
                                               fontSize: 16,
                                               color: stockColor,

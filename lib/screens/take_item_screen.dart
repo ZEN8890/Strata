@@ -31,6 +31,7 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
 
   Item? _scannedItem;
   bool _isQuantityBased = true;
+  bool _isAdding = false;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -197,7 +198,7 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
     }
   }
 
-  Future<void> _takeItem() async {
+  Future<void> _processItem() async {
     if (_scannedItem == null) {
       _showNotification('Item Belum Dipindai',
           'Silakan pindai atau masukkan barcode item terlebih dahulu.',
@@ -206,54 +207,59 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
     }
 
     if (_isQuantityBased) {
-      int? quantityTaken = int.tryParse(_quantityController.text.trim());
-      if (quantityTaken == null || quantityTaken <= 0) {
-        _showNotification(
-            'Kuantitas Invalid', 'Kuantitas yang diambil harus lebih dari 0.',
+      int? quantity = int.tryParse(_quantityController.text.trim());
+      if (quantity == null || quantity <= 0) {
+        _showNotification('Kuantitas Invalid', 'Kuantitas harus lebih dari 0.',
             isError: true);
         return;
       }
-      if (quantityTaken > _scannedItem!.quantityOrRemark) {
+
+      int newQuantity = _isAdding ? quantity : -quantity;
+
+      if (!_isAdding && quantity > _scannedItem!.quantityOrRemark) {
         _showNotification('Stok Tidak Cukup',
-            'Kuantitas yang diambil ($quantityTaken) melebihi stok yang tersedia (${_scannedItem!.quantityOrRemark}).',
+            'Kuantitas yang diambil ($quantity) melebihi stok yang tersedia (${_scannedItem!.quantityOrRemark}).',
             isError: true);
         return;
       }
 
       try {
         await _firestore.collection('items').doc(_scannedItem!.id).update({
-          'quantityOrRemark': FieldValue.increment(-quantityTaken),
+          'quantityOrRemark': FieldValue.increment(newQuantity),
         });
 
-        // Ambil dokumen terbaru setelah update
+        // Get the latest document after the update
         DocumentSnapshot updatedItemDoc =
             await _firestore.collection('items').doc(_scannedItem!.id).get();
         int? updatedStock =
             (updatedItemDoc.data() as Map<String, dynamic>)['quantityOrRemark'];
 
-        _showNotification('Stok Berhasil Dikurangi',
-            'Stok item "${_scannedItem!.name}" dikurangi sebanyak $quantityTaken. Sisa Stok: $updatedStock',
+        String operation = _isAdding ? 'Ditambahkan' : 'Dikurangi';
+        String action = _isAdding ? 'Penambahan' : 'Pengurangan';
+
+        _showNotification('Stok Berhasil $operation',
+            'Stok item "${_scannedItem!.name}" $operation sebanyak $quantity. Sisa Stok: $updatedStock',
             isError: false);
 
         await _addLogEntry(
           _scannedItem!,
-          quantityTaken,
+          newQuantity,
           remarks: _remarksController.text.trim().isEmpty
               ? null
               : _remarksController.text.trim(),
           remainingStock: updatedStock,
         );
       } catch (e) {
-        _showNotification('Gagal Mengurangi Stok', 'Gagal mengurangi stok: $e',
+        _showNotification('Gagal Memproses Stok', 'Gagal memproses stok: $e',
             isError: true);
-        log('Error reducing stock: $e');
+        log('Error processing stock: $e');
         return;
       }
     } else {
       String remarks = _remarksController.text.trim();
       if (remarks.isEmpty) {
-        _showNotification('Remarks Kosong',
-            'Remarks pengambilan tidak boleh kosong untuk item ini.',
+        _showNotification(
+            'Remarks Kosong', 'Remarks tidak boleh kosong untuk item ini.',
             isError: true);
         return;
       }
@@ -370,6 +376,39 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
               )
             : ListView(
                 children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Tambah',
+                        style: TextStyle(
+                          color:
+                              _isAdding ? Colors.green[700] : Colors.grey[400],
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Switch(
+                        value: !_isAdding,
+                        onChanged: (bool value) {
+                          setState(() {
+                            _isAdding = !value;
+                          });
+                        },
+                        activeColor: Colors.red,
+                        activeTrackColor: Colors.red[200],
+                        inactiveThumbColor: Colors.green,
+                        inactiveTrackColor: Colors.green[200],
+                      ),
+                      Text(
+                        'Kurang',
+                        style: TextStyle(
+                          color:
+                              !_isAdding ? Colors.red[700] : Colors.grey[400],
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: _barcodeController,
@@ -402,15 +441,47 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
                   if (_scannedItem != null) ...[
                     Card(
                       margin: const EdgeInsets.symmetric(vertical: 10),
+                      color: _isAdding ? Colors.green[50] : Colors.red[50],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                            color: _isAdding ? Colors.green : Colors.red,
+                            width: 2),
+                      ),
                       child: Padding(
-                        padding: const EdgeInsets.all(12.0),
+                        padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  _isAdding
+                                      ? Icons.add_circle
+                                      : Icons.remove_circle,
+                                  color: _isAdding ? Colors.green : Colors.red,
+                                  size: 28,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${_isAdding ? 'Tambah' : 'Ambil'} Item',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color: _isAdding
+                                        ? Colors.green[900]
+                                        : Colors.red[900],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 16, thickness: 1),
                             Text('Nama Barang: ${_scannedItem!.name}',
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
+                                    fontWeight: FontWeight.bold, fontSize: 16)),
+                            const SizedBox(height: 4),
                             Text('Barcode: ${_scannedItem!.barcode}'),
+                            const SizedBox(height: 4),
                             Text(
                                 'Stok Tersedia: ${_scannedItem!.quantityOrRemark.toString()}'),
                           ],
@@ -422,10 +493,15 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
                       TextField(
                         controller: _quantityController,
                         decoration: InputDecoration(
-                          labelText: 'Kuantitas yang Diambil',
+                          labelText: _isAdding
+                              ? 'Kuantitas yang Ditambah'
+                              : 'Kuantitas yang Diambil',
                           border: const OutlineInputBorder(),
                           hintText:
                               'Stok tersedia: ${_scannedItem!.quantityOrRemark}',
+                          prefixIcon: Icon(_isAdding
+                              ? Icons.add_box_outlined
+                              : Icons.remove_circle_outline),
                         ),
                         keyboardType: TextInputType.number,
                         textInputAction: TextInputAction.done,
@@ -440,6 +516,7 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
                           labelText: 'Remarks Pengambilan',
                           border: OutlineInputBorder(),
                           hintText: 'Contoh: Untuk P3K di ruang rapat',
+                          prefixIcon: Icon(Icons.note_alt_outlined),
                         ),
                         maxLines: 3,
                         textInputAction: TextInputAction.done,
@@ -449,9 +526,17 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
                       ),
                     const SizedBox(height: 20),
                     Center(
-                      child: ElevatedButton(
-                        onPressed: _takeItem,
-                        child: const Text('Ambil Barang'),
+                      child: ElevatedButton.icon(
+                        onPressed: _processItem,
+                        icon: Icon(_isAdding ? Icons.add : Icons.remove),
+                        label:
+                            Text(_isAdding ? 'Tambah Barang' : 'Ambil Barang'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              _isAdding ? Colors.green : Colors.red,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
+                        ),
                       ),
                     ),
                   ] else if (_isLoading) ...[
@@ -462,7 +547,7 @@ class _TakeItemScreenState extends State<TakeItemScreen> {
                   ] else ...[
                     const Center(
                         child: Text(
-                            'Pindai barcode atau masukkan secara manual untuk mengambil barang.')),
+                            'Pindai barcode atau masukkan secara manual untuk memproses barang.')),
                   ],
                 ],
               ),
