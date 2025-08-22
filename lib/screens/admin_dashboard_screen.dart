@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:Strata_lite/screens/add_item_screen.dart';
 import 'package:Strata_lite/screens/item_list_screen.dart';
 import 'package:Strata_lite/screens/time_log_screen.dart';
-import 'package:Strata_lite/screens/take_item_screen.dart';
+import 'package:Strata_lite/screens/scan_barcode.dart';
 import 'package:Strata_lite/screens/settings_screen.dart';
 import 'package:Strata_lite/screens/users_screen.dart';
 import 'package:Strata_lite/screens/ai_page.dart';
@@ -37,7 +37,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     const Center(child: Text('Halaman Impor/Ekspor Data (Segera Hadir!)')),
     const TimeLogScreen(),
     const SettingsScreen(),
-    const TakeItemScreen(),
+    const ScanBarcodeScreen(),
     const UsersScreen(),
     const AiPage(),
     const CreditPage(),
@@ -49,7 +49,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     'Impor/Ekspor Data',
     'Log Pengambilan Barang',
     'Pengaturan',
-    'Ambil Barang',
+    'Ambil/tambah Barang',
     'Manajemen Pengguna',
     'AI Asisten Inventaris',
     'Tentang Aplikasi',

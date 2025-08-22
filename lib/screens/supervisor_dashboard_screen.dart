@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:Strata_lite/screens/add_item_screen.dart';
 import 'package:Strata_lite/screens/item_list_screen.dart';
 import 'package:Strata_lite/screens/time_log_screen.dart';
-import 'package:Strata_lite/screens/take_item_screen.dart';
+import 'package:Strata_lite/screens/scan_barcode.dart';
 import 'package:Strata_lite/screens/settings_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -38,7 +38,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     const Center(child: Text('Halaman Impor/Ekspor Data (Segera Hadir!)')),
     const TimeLogScreen(),
     const SettingsScreen(),
-    const TakeItemScreen(),
+    const ScanBarcodeScreen(),
   ];
 
   @override
@@ -214,7 +214,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.shopping_cart),
-              title: const Text('Ambil Barang'),
+              title: const Text('Ambil/tambah Barang'),
               onTap: () {
                 _onItemTapped(5);
                 Navigator.pop(context);

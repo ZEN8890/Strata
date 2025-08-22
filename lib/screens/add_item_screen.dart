@@ -1,4 +1,3 @@
-// Path: lib/screens/add_item_screen.dart
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'dart:async';
@@ -22,7 +21,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _barcodeController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
-  final TextEditingController _remarkController = TextEditingController();
   final TextEditingController _expiryDateController = TextEditingController();
 
   MobileScannerController? _scannerController;
@@ -47,7 +45,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
     );
-    _fetchClassifications();
   }
 
   @override
@@ -55,7 +52,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
     _nameController.dispose();
     _barcodeController.dispose();
     _quantityController.dispose();
-    _remarkController.dispose();
     _expiryDateController.dispose();
     _scannerController?.dispose();
     _notificationTimer?.cancel();
@@ -69,26 +65,6 @@ class _AddItemScreenState extends State<AddItemScreen> {
       log('Playing beep sound.');
     } catch (e) {
       log('Error playing sound: $e');
-    }
-  }
-
-  Future<void> _fetchClassifications() async {
-    try {
-      final doc =
-          await _firestore.collection('config').doc('classifications').get();
-      if (doc.exists) {
-        final data = doc.data();
-        if (data != null && data['list'] is List) {
-          if (mounted) {
-            setState(() {
-              _classifications = List<String>.from(data['list']);
-            });
-          }
-        }
-      }
-    } catch (e) {
-      log('Error fetching classifications: $e');
-      _showNotification('Error', 'Gagal memuat klasifikasi. $e', isError: true);
     }
   }
 
@@ -154,14 +130,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
       }
       quantityOrRemark = quantity;
     } else {
-      String remark = _remarkController.text.trim();
-      if (remark.isEmpty) {
-        _showNotification('Remarks Kosong',
-            'Remarks tidak boleh kosong untuk item non-kuantitas.',
-            isError: true);
-        return;
-      }
-      quantityOrRemark = remark;
+      quantityOrRemark = 'Tidak Dapat Dihitung'; // Remarks dihapus
     }
 
     if (barcode.length != 13) {
@@ -170,20 +139,60 @@ class _AddItemScreenState extends State<AddItemScreen> {
       return;
     }
 
-    if (_hasClassification &&
-        (_selectedClassification == null || _selectedClassification!.isEmpty)) {
-      _showNotification('Klasifikasi Kosong', 'Harap pilih klasifikasi item.',
+    if (_hasExpiryDate && _selectedExpiryDate == null) {
+      _showNotification('Tanggal Kedaluwarsa Invalid',
+          'Tanggal kedaluwarsa tidak boleh kosong jika diaktifkan.',
           isError: true);
       return;
     }
 
-    if (_hasExpiryDate && _selectedExpiryDate != null) {
-      if (_selectedExpiryDate!.isBefore(DateTime.now())) {
-        _showNotification('Tanggal Kedaluwarsa Invalid',
-            'Tanggal kedaluwarsa tidak boleh di masa lalu.',
-            isError: true);
-        return;
-      }
+    if (_hasExpiryDate && _selectedExpiryDate!.isBefore(DateTime.now())) {
+      _showNotification('Tanggal Kedaluwarsa Invalid',
+          'Tanggal kedaluwarsa tidak boleh di masa lalu.',
+          isError: true);
+      return;
+    }
+
+    // Tampilkan dialog konfirmasi
+    bool? confirmAdd = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Konfirmasi Tambah Barang'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('Nama Barang: $itemName'),
+                Text('Barcode: $barcode'),
+                if (_isQuantityBased) Text('Kuantitas: $quantityOrRemark'),
+                if (!_isQuantityBased) Text('Remarks: $quantityOrRemark'),
+                if (_hasExpiryDate && _selectedExpiryDate != null)
+                  Text(
+                      'Expiry Date: ${DateFormat('dd-MM-yyyy').format(_selectedExpiryDate!)}'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Batal'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+            ),
+            TextButton(
+              child: const Text('Tambahkan',
+                  style: TextStyle(color: Colors.green)),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmAdd != true) {
+      return; // Batal jika pengguna tidak mengkonfirmasi
     }
 
     try {
@@ -233,12 +242,11 @@ class _AddItemScreenState extends State<AddItemScreen> {
           _nameController.clear();
           _barcodeController.clear();
           _quantityController.clear();
-          _remarkController.clear();
           _expiryDateController.clear();
           _selectedExpiryDate = null;
           _isQuantityBased = true;
           _selectedClassification = null;
-          _hasExpiryDate = false;
+          _hasExpiryDate = true;
           _hasClassification = true;
         });
       }
@@ -358,181 +366,178 @@ class _AddItemScreenState extends State<AddItemScreen> {
                 ),
               ],
             )
-          : Form(
-              key: _formKey,
-              child: ListView(
-                children: [
-                  const SizedBox(height: 20),
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nama Barang',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Nama Barang tidak boleh kosong';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 15),
-                  TextFormField(
-                    controller: _barcodeController,
-                    decoration: InputDecoration(
-                      labelText: 'Barcode EAN-13',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.qr_code_scanner),
-                        onPressed: _startScanBarcode,
+          : SingleChildScrollView(
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    Card(
+                      margin: EdgeInsets.zero,
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Tambahkan Barang Baru',
+                              style: TextStyle(
+                                  fontSize: 24, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 20),
+                            TextFormField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Nama Barang',
+                                border: OutlineInputBorder(),
+                                filled: true,
+                                fillColor: Color(0xFFF3F4F6),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Nama Barang tidak boleh kosong';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 15),
+                            TextFormField(
+                              controller: _barcodeController,
+                              decoration: InputDecoration(
+                                labelText:
+                                    'Barcode EAN-13 (Hanya bisa di-scan)',
+                                border: const OutlineInputBorder(),
+                                filled: true,
+                                fillColor: const Color(0xFFF3F4F6),
+                                suffixIcon: IconButton(
+                                  icon: const Icon(Icons.qr_code_scanner),
+                                  onPressed: _startScanBarcode,
+                                ),
+                              ),
+                              readOnly: true,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Barcode tidak boleh kosong';
+                                }
+                                if (value.length != 13) {
+                                  return 'Barcode harus 13 digit (EAN-13)';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 15),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Item Berbasis Kuantitas?'),
+                                Switch(
+                                  value: _isQuantityBased,
+                                  onChanged: (bool value) {
+                                    setState(() {
+                                      _isQuantityBased = value;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 15),
+                            if (_isQuantityBased)
+                              TextFormField(
+                                controller: _quantityController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Kuantitas Awal',
+                                  border: OutlineInputBorder(),
+                                  filled: true,
+                                  fillColor: Color(0xFFF3F4F6),
+                                ),
+                                keyboardType: TextInputType.number,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Kuantitas tidak boleh kosong';
+                                  }
+                                  if (int.tryParse(value) == null ||
+                                      int.parse(value) <= 0) {
+                                    return 'Kuantitas harus berupa angka positif';
+                                  }
+                                  return null;
+                                },
+                              )
+                            else
+                              const Text('Remarks: Tidak Dapat Dihitung',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black54)),
+                            const SizedBox(height: 15),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Punya Expiry Date?'),
+                                Switch(
+                                  value: _hasExpiryDate,
+                                  onChanged: (bool value) {
+                                    setState(() {
+                                      _hasExpiryDate = value;
+                                      if (!value) {
+                                        _selectedExpiryDate = null;
+                                        _expiryDateController.clear();
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            if (_hasExpiryDate)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 15.0),
+                                child: TextFormField(
+                                  controller: _expiryDateController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Expiry Date',
+                                    hintText: 'dd-MM-yyyy',
+                                    border: OutlineInputBorder(),
+                                    filled: true,
+                                    fillColor: Color(0xFFF3F4F6),
+                                    suffixIcon: Icon(Icons.calendar_today),
+                                  ),
+                                  readOnly: true,
+                                  onTap: () => _selectExpiryDate(context),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Tanggal kedaluwarsa tidak boleh kosong';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Barcode tidak boleh kosong';
-                      }
-                      if (value.length != 13) {
-                        return 'Barcode harus 13 digit (EAN-13)';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 15),
-                  Row(
-                    children: [
-                      const Text('Punya Klasifikasi?'),
-                      Switch(
-                        value: _hasClassification,
-                        onChanged: (bool value) {
-                          setState(() {
-                            _hasClassification = value;
-                            if (!value) {
-                              _selectedClassification = null;
-                            }
-                          });
-                        },
+                    const SizedBox(height: 20),
+                    Center(
+                      child: ElevatedButton(
+                        onPressed: _addItem,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 50),
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: const Text(
+                          'Tambahkan Barang',
+                          style: TextStyle(fontSize: 18),
+                        ),
                       ),
-                    ],
-                  ),
-                  if (_hasClassification)
-                    DropdownButtonFormField<String>(
-                      value: _selectedClassification,
-                      decoration: const InputDecoration(
-                        labelText: 'Klasifikasi Item',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _classifications.map((String classification) {
-                        return DropdownMenuItem<String>(
-                          value: classification,
-                          child: Text(classification),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedClassification = newValue;
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Klasifikasi tidak boleh kosong';
-                        }
-                        return null;
-                      },
                     ),
-                  const SizedBox(height: 15),
-                  Row(
-                    children: [
-                      const Text('Item Berbasis Kuantitas?'),
-                      Switch(
-                        value: _isQuantityBased,
-                        onChanged: (bool value) {
-                          setState(() {
-                            _isQuantityBased = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-                  if (_isQuantityBased)
-                    TextFormField(
-                      controller: _quantityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Kuantitas Awal',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Kuantitas tidak boleh kosong';
-                        }
-                        if (int.tryParse(value) == null ||
-                            int.parse(value) <= 0) {
-                          return 'Kuantitas harus berupa angka positif';
-                        }
-                        return null;
-                      },
-                    )
-                  else
-                    TextFormField(
-                      controller: _remarkController,
-                      decoration: const InputDecoration(
-                        labelText: 'Remarks (Contoh: Cairan, Tidak Habis)',
-                        border: OutlineInputBorder(),
-                      ),
-                      maxLines: 3,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Remarks tidak boleh kosong';
-                        }
-                        return null;
-                      },
-                    ),
-                  const SizedBox(height: 15),
-                  Row(
-                    children: [
-                      const Text('Punya Expiry Date?'),
-                      Switch(
-                        value: _hasExpiryDate,
-                        onChanged: (bool value) {
-                          setState(() {
-                            _hasExpiryDate = value;
-                            if (!value) {
-                              _selectedExpiryDate = null;
-                              _expiryDateController.clear();
-                            }
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  if (_hasExpiryDate)
-                    TextFormField(
-                      controller: _expiryDateController,
-                      decoration: const InputDecoration(
-                        labelText: 'Expiry Date',
-                        hintText: 'dd-MM-yyyy',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.calendar_today),
-                      ),
-                      readOnly: true,
-                      onTap: () => _selectExpiryDate(context),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Tanggal kedaluwarsa tidak boleh kosong';
-                        }
-                        return null;
-                      },
-                    ),
-                  const SizedBox(height: 20),
-                  Center(
-                    child: ElevatedButton(
-                      onPressed: _addItem,
-                      child: const Text('Tambahkan Barang'),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
     );

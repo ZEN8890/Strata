@@ -1,4 +1,3 @@
-// Path: lib/screens/time_log_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:Strata_lite/models/log_entry.dart';
@@ -1070,7 +1069,6 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                             '${DateFormat('dd-MM-yyyy').format(logEntry.timestamp)} '
                             '${DateFormat('HH:mm:ss').format(logEntry.timestamp)}';
 
-                        // Check if quantityOrRemark is int and is positive
                         bool isAdding = logEntry.quantityOrRemark is int &&
                             logEntry.quantityOrRemark > 0;
                         Color logColor =
@@ -1091,15 +1089,25 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                           quantityText = logEntry.quantityOrRemark.toString();
                         }
 
-                        String stockText = 'N/A';
+                        // Calculate stock before the action
+                        String stockTextBefore = 'N/A';
+                        if (logEntry.remainingStock != null &&
+                            logEntry.quantityOrRemark is int) {
+                          int stockAfter = logEntry.remainingStock as int;
+                          int quantityChange = logEntry.quantityOrRemark as int;
+                          int stockBefore = stockAfter - quantityChange;
+                          stockTextBefore = stockBefore.toString();
+                        }
+
+                        String stockTextAfter = 'N/A';
                         Color stockColor = Colors.grey;
                         if (logEntry.remainingStock != null) {
-                          stockText = logEntry.remainingStock.toString();
+                          stockTextAfter = logEntry.remainingStock.toString();
                           stockColor = (logEntry.remainingStock == 0)
                               ? Colors.red
                               : Colors.green[800]!;
                         } else {
-                          stockText = 'Tidak Bisa Dihitung';
+                          stockTextAfter = 'Tidak Bisa Dihitung';
                           stockColor = Colors.blueGrey;
                         }
 
@@ -1182,7 +1190,8 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                                       const Icon(Icons.inventory_2,
                                           size: 20, color: Colors.blueGrey),
                                       const SizedBox(width: 10),
-                                      Text('Sisa Stok: $stockText',
+                                      Text(
+                                          'Sisa Stok: $stockTextBefore -> $stockTextAfter',
                                           style: TextStyle(
                                               fontSize: 16,
                                               color: stockColor,
@@ -1222,10 +1231,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                                   ],
                                 ),
                                 if (logEntry.remarks != null &&
-                                    logEntry.remarks!.isNotEmpty &&
-                                    !(logEntry.quantityOrRemark is String &&
-                                        logEntry.remarks ==
-                                            logEntry.quantityOrRemark))
+                                    logEntry.remarks!.isNotEmpty)
                                   Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
