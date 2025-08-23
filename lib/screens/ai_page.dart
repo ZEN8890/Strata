@@ -815,6 +815,7 @@ class _AiPageState extends State<AiPage> {
       'barista',
       'bartender',
       'waiter/waitress',
+      'front service',
       'general'
     ];
     final queryWithoutKeywords = query.replaceAll(
