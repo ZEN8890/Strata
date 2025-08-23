@@ -1,3 +1,4 @@
+// Path: lib/screens/scan_barcode.dart
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'dart:async';
@@ -31,7 +32,9 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
   Item? _scannedItem;
   bool _isQuantityBased = true;
   String _userRole = 'staff';
+  String _userDepartment = 'unknown';
   bool _isAdding = true;
+  bool _isUserLoading = true;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -45,10 +48,10 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
     );
-    _fetchUserRole();
+    _fetchUserData();
   }
 
-  Future<void> _fetchUserRole() async {
+  Future<void> _fetchUserData() async {
     User? currentUser = _auth.currentUser;
     if (currentUser != null) {
       try {
@@ -56,16 +59,40 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
             await _firestore.collection('users').doc(currentUser.uid).get();
         if (userDoc.exists) {
           final userData = userDoc.data() as Map<String, dynamic>;
-          setState(() {
-            _userRole = userData['role'] ?? 'staff';
-            if (_userRole == 'staff') {
-              _isAdding = false; // Set to 'take' for staff
-            }
-          });
-          log('User role fetched: $_userRole');
+          if (mounted) {
+            setState(() {
+              _userRole = userData['role'] ?? 'staff';
+              _userDepartment = userData['department'] ?? 'unknown';
+              // Logic to set isAdding based on role
+              if (_userRole == 'staff') {
+                _isAdding = false;
+              } else {
+                _isAdding = true;
+              }
+              _isUserLoading = false;
+            });
+          }
+          log('User data fetched: role=$_userRole, department=$_userDepartment');
+        } else {
+          if (mounted) {
+            setState(() {
+              _isUserLoading = false;
+            });
+          }
         }
       } catch (e) {
-        log('Error fetching user role: $e');
+        log('Error fetching user data: $e');
+        if (mounted) {
+          setState(() {
+            _isUserLoading = false;
+          });
+        }
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isUserLoading = false;
+        });
       }
     }
   }
@@ -133,6 +160,11 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
   }
 
   void _startScanBarcode() {
+    if (_isUserLoading) {
+      _showNotification('Memuat Data', 'Harap tunggu data pengguna dimuat.',
+          isError: true);
+      return;
+    }
     setState(() {
       _isScanning = true;
       _scannedItem = null;
@@ -146,10 +178,6 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
   }
 
   void _onBarcodeDetected(BarcodeCapture capture) {
-    if (_alertTimer != null && _alertTimer!.isActive) {
-      return;
-    }
-
     if (capture.barcodes.isNotEmpty) {
       final Barcode detectedBarcode = capture.barcodes.first;
       final String? barcodeValue = detectedBarcode.rawValue;
@@ -167,6 +195,16 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
           _isScanning = false;
         });
         _scannerController?.stop();
+
+        if (_isUserLoading || _userDepartment == 'unknown') {
+          _showNotification('Gagal!',
+              'Data pengguna belum dimuat, tidak dapat memproses barcode.',
+              isError: true);
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
 
         _fetchItemDetails(barcodeValue);
       } else {
@@ -194,9 +232,23 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
 
       if (snapshot.docs.isNotEmpty) {
         DocumentSnapshot itemDoc = snapshot.docs.first;
+        final fetchedItem = Item.fromFirestore(
+            itemDoc.data() as Map<String, dynamic>, itemDoc.id);
+
+        if (_userRole != 'admin' && _userRole != 'dev') {
+          if (!fetchedItem.allowedDepartments.contains(_userDepartment)) {
+            setState(() {
+              _isLoading = false;
+            });
+            _showNotification('Akses Ditolak',
+                'Item ini tidak dapat diakses oleh departemen Anda. Allowed: ${fetchedItem.allowedDepartments}',
+                isError: true);
+            return;
+          }
+        }
+
         setState(() {
-          _scannedItem = Item.fromFirestore(
-              itemDoc.data() as Map<String, dynamic>, itemDoc.id);
+          _scannedItem = fetchedItem;
           _isQuantityBased = _scannedItem!.quantityOrRemark is int;
           _isLoading = false;
         });
@@ -227,6 +279,15 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
           'Silakan pindai atau masukkan barcode item terlebih dahulu.',
           isError: true);
       return;
+    }
+
+    if (_userRole != 'admin' && _userRole != 'dev') {
+      if (!_scannedItem!.allowedDepartments.contains(_userDepartment)) {
+        _showNotification(
+            'Akses Ditolak', 'Anda tidak dapat memproses item ini.',
+            isError: true);
+        return;
+      }
     }
 
     if (_isQuantityBased) {
@@ -355,220 +416,291 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: GestureDetector(
-        onTap: () {
-          FocusScope.of(context).unfocus();
-        },
-        child: _isScanning
-            ? Stack(
-                children: [
-                  MobileScanner(
-                    controller: _scannerController,
-                    onDetect: _onBarcodeDetected,
-                    scanWindow: scanWindowRect,
-                  ),
-                  Positioned(
-                    left: scanWindowRect.left,
-                    top: scanWindowRect.top,
-                    width: scanWindowRect.width,
-                    height: scanWindowRect.height,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.red, width: 4),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 16,
-                    left: 16,
-                    right: 16,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _isScanning = false;
-                        });
-                        _scannerController?.stop();
-                      },
-                      child: const Text('Batalkan Scan'),
-                    ),
-                  ),
-                ],
-              )
-            : ListView(
-                children: [
-                  if (_userRole == 'admin')
-                    Card(
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _isAdding = true;
-                                    _scannedItem = null;
-                                  });
-                                },
-                                icon: const Icon(Icons.add_circle_outline),
-                                label: const Text('Tambah'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _isAdding
-                                      ? Colors.green[600]
-                                      : Colors.grey[300],
-                                  foregroundColor:
-                                      _isAdding ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _isAdding = false;
-                                    _scannedItem = null;
-                                  });
-                                },
-                                icon: const Icon(Icons.remove_circle_outline),
-                                label: const Text('Ambil'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: !_isAdding
-                                      ? Colors.red[600]
-                                      : Colors.grey[300],
-                                  foregroundColor: !_isAdding
-                                      ? Colors.white
-                                      : Colors.black87,
-                                ),
-                              ),
-                            ),
-                          ],
+      child: _isUserLoading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : GestureDetector(
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              child: _isScanning
+                  ? Stack(
+                      children: [
+                        MobileScanner(
+                          controller: _scannerController,
+                          onDetect: _onBarcodeDetected,
+                          scanWindow: scanWindowRect,
                         ),
-                      ),
-                    ),
-                  const SizedBox(height: 20),
-                  Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextFormField(
-                            controller: _barcodeController,
-                            readOnly: true,
-                            decoration: InputDecoration(
-                              labelText: 'Barcode EAN-13',
-                              border: const OutlineInputBorder(),
-                              filled: true,
-                              fillColor: const Color(0xFFF3F4F6),
-                              suffixIcon: _isLoading
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(8.0),
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
-                                    )
-                                  : IconButton(
-                                      icon: const Icon(Icons.qr_code_scanner),
-                                      onPressed: _startScanBarcode,
-                                    ),
+                        Positioned(
+                          left: scanWindowRect.left,
+                          top: scanWindowRect.top,
+                          width: scanWindowRect.width,
+                          height: scanWindowRect.height,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.red, width: 4),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          if (_scannedItem != null) ...[
-                            const SizedBox(height: 20),
-                            Text(
-                              'Nama Barang: ${_scannedItem!.name}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                                color: Theme.of(context).primaryColor,
+                        ),
+                        Positioned(
+                          bottom: 16,
+                          left: 16,
+                          right: 16,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _isScanning = false;
+                              });
+                              _scannerController?.stop();
+                            },
+                            child: const Text('Batalkan Scan'),
+                          ),
+                        ),
+                      ],
+                    )
+                  : ListView(
+                      children: [
+                        Card(
+                          margin: EdgeInsets.zero,
+                          elevation: 2,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Role Pengguna Saat Ini: $_userRole',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                Text(
+                                  'Departemen Pengguna Saat Ini: $_userDepartment',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        // Tampilkan tombol ini untuk role selain staff
+                        if (_userRole != 'staff')
+                          Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _isAdding = true;
+                                          _scannedItem = null;
+                                        });
+                                      },
+                                      icon:
+                                          const Icon(Icons.add_circle_outline),
+                                      label: const Text('Tambah'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _isAdding
+                                            ? Colors.green[600]
+                                            : Colors.grey[300],
+                                        foregroundColor: _isAdding
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _isAdding = false;
+                                          _scannedItem = null;
+                                        });
+                                      },
+                                      icon: const Icon(
+                                          Icons.remove_circle_outline),
+                                      label: const Text('Ambil'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: !_isAdding
+                                            ? Colors.red[600]
+                                            : Colors.grey[300],
+                                        foregroundColor: !_isAdding
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            Text(
-                                'Stok Tersedia: ${_scannedItem!.quantityOrRemark.toString()}',
-                                style: const TextStyle(fontSize: 16)),
-                            const SizedBox(height: 20),
-                            if (_isQuantityBased &&
-                                _scannedItem!.quantityOrRemark is int)
-                              TextFormField(
-                                controller: _quantityController,
-                                decoration: InputDecoration(
-                                  labelText: _isAdding
-                                      ? 'Kuantitas yang Ditambah'
-                                      : 'Kuantitas yang Diambil',
-                                  border: const OutlineInputBorder(),
-                                  filled: true,
-                                  fillColor: const Color(0xFFF3F4F6),
-                                  prefixIcon: Icon(_isAdding
-                                      ? Icons.add_box_outlined
-                                      : Icons.remove_circle_outline),
-                                  hintText: 'Masukkan kuantitas',
-                                ),
-                                keyboardType: TextInputType.number,
-                                onFieldSubmitted: (value) {
-                                  FocusScope.of(context).unfocus();
-                                },
-                              )
-                            else
-                              TextFormField(
-                                controller: _remarksController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Remarks Pengambilan',
-                                  border: OutlineInputBorder(),
-                                  filled: true,
-                                  fillColor: Color(0xFFF3F4F6),
-                                  prefixIcon: Icon(Icons.notes),
-                                  hintText: 'Contoh: Untuk P3K di ruang rapat',
-                                ),
-                                maxLines: 3,
-                                onFieldSubmitted: (value) {
-                                  FocusScope.of(context).unfocus();
-                                },
+                          ),
+                        // Untuk role staff, tampilkan hanya tombol 'Ambil'
+                        if (_userRole == 'staff')
+                          Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _isAdding = false;
+                                          _scannedItem = null;
+                                        });
+                                      },
+                                      icon: const Icon(
+                                          Icons.remove_circle_outline),
+                                      label: const Text('Ambil'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: !_isAdding
+                                            ? Colors.red[600]
+                                            : Colors.grey[300],
+                                        foregroundColor: !_isAdding
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            const SizedBox(height: 20),
-                            Center(
-                              child: ElevatedButton.icon(
-                                onPressed: _processItem,
-                                icon:
-                                    Icon(_isAdding ? Icons.add : Icons.remove),
-                                label: Text(_isAdding
-                                    ? 'Tambah Barang'
-                                    : 'Ambil Barang'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      _isAdding ? Colors.green : Colors.red,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 24, vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        const SizedBox(height: 20),
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextFormField(
+                                  controller: _barcodeController,
+                                  readOnly: true,
+                                  decoration: InputDecoration(
+                                    labelText: 'Barcode EAN-13',
+                                    border: const OutlineInputBorder(),
+                                    filled: true,
+                                    fillColor: const Color(0xFFF3F4F6),
+                                    suffixIcon: _isLoading
+                                        ? const Padding(
+                                            padding: EdgeInsets.all(8.0),
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : IconButton(
+                                            icon: const Icon(
+                                                Icons.qr_code_scanner),
+                                            onPressed: _startScanBarcode,
+                                          ),
                                   ),
                                 ),
-                              ),
+                                if (_scannedItem != null) ...[
+                                  const SizedBox(height: 20),
+                                  Text(
+                                    'Nama Barang: ${_scannedItem!.name}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                      color: Theme.of(context).primaryColor,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                      'Stok Tersedia: ${_scannedItem!.quantityOrRemark.toString()}',
+                                      style: const TextStyle(fontSize: 16)),
+                                  const SizedBox(height: 20),
+                                  if (_isQuantityBased &&
+                                      _scannedItem!.quantityOrRemark is int)
+                                    TextFormField(
+                                      controller: _quantityController,
+                                      decoration: InputDecoration(
+                                        labelText: _isAdding
+                                            ? 'Kuantitas yang Ditambah'
+                                            : 'Kuantitas yang Diambil',
+                                        border: const OutlineInputBorder(),
+                                        filled: true,
+                                        fillColor: const Color(0xFFF3F4F6),
+                                        prefixIcon: Icon(_isAdding
+                                            ? Icons.add_box_outlined
+                                            : Icons.remove_circle_outline),
+                                        hintText: 'Masukkan kuantitas',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      onFieldSubmitted: (value) {
+                                        FocusScope.of(context).unfocus();
+                                      },
+                                    )
+                                  else
+                                    TextFormField(
+                                      controller: _remarksController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Remarks Pengambilan',
+                                        border: OutlineInputBorder(),
+                                        filled: true,
+                                        fillColor: Color(0xFFF3F4F6),
+                                        prefixIcon: Icon(Icons.notes),
+                                        hintText:
+                                            'Contoh: untuk spagethi,bungkus masih sisa setengah',
+                                      ),
+                                      maxLines: 3,
+                                      onFieldSubmitted: (value) {
+                                        FocusScope.of(context).unfocus();
+                                      },
+                                    ),
+                                  const SizedBox(height: 20),
+                                  Center(
+                                    child: ElevatedButton.icon(
+                                      onPressed: _processItem,
+                                      icon: Icon(
+                                          _isAdding ? Icons.add : Icons.remove),
+                                      label: Text(_isAdding
+                                          ? 'Tambah Barang'
+                                          : 'Ambil Barang'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _isAdding
+                                            ? Colors.green
+                                            : Colors.red,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 24, vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ] else if (!_isLoading)
+                                  const Center(
+                                    child: Text(
+                                      'Pindai barcode untuk memproses barang.',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ] else if (!_isLoading)
-                            const Center(
-                              child: Text(
-                                'Pindai barcode untuk memproses barang.',
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                        ],
-                      ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-      ),
+            ),
     );
   }
 }

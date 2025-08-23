@@ -1,3 +1,4 @@
+// Path: lib/screens/add_item_screen.dart
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'dart:async';
@@ -8,6 +9,7 @@ import 'package:another_flushbar/flushbar.dart';
 import 'package:intl/intl.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../models/added_log_entry.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AddItemScreen extends StatefulWidget {
   const AddItemScreen({super.key});
@@ -22,6 +24,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final TextEditingController _barcodeController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _expiryDateController = TextEditingController();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   MobileScannerController? _scannerController;
   bool _isQuantityBased = true;
@@ -30,13 +34,14 @@ class _AddItemScreenState extends State<AddItemScreen> {
   String? _selectedClassification;
   final _audioPlayer = AudioPlayer();
 
+  String _userRole = 'staff';
+  List<String> _classifications = [];
+  List<String> _departments = [];
+
   bool _hasExpiryDate = false;
   bool _hasClassification = true;
 
   Timer? _notificationTimer;
-
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  List<String> _classifications = [];
 
   @override
   void initState() {
@@ -45,6 +50,9 @@ class _AddItemScreenState extends State<AddItemScreen> {
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
     );
+    _fetchClassifications();
+    _fetchDepartments();
+    _fetchUserData();
   }
 
   @override
@@ -57,6 +65,60 @@ class _AddItemScreenState extends State<AddItemScreen> {
     _notificationTimer?.cancel();
     _audioPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchUserData() async {
+    User? currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            _userRole = userData['role'] ?? 'staff';
+            // Disable classification switch for supervisor
+            if (_userRole == 'supervisor' || _userRole == 'staff') {
+              _hasClassification = false;
+            }
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _fetchClassifications() async {
+    try {
+      final doc =
+          await _firestore.collection('config').doc('classifications').get();
+      if (mounted && doc.exists) {
+        final data = doc.data();
+        if (data != null && data['list'] is List) {
+          setState(() {
+            _classifications = List<String>.from(data['list']);
+          });
+        }
+      }
+    } catch (e) {
+      log('Error fetching classifications: $e');
+    }
+  }
+
+  Future<void> _fetchDepartments() async {
+    try {
+      final doc =
+          await _firestore.collection('config').doc('departments').get();
+      if (mounted && doc.exists) {
+        final data = doc.data();
+        if (data != null && data['list'] is List) {
+          setState(() {
+            _departments = List<String>.from(data['list']);
+          });
+        }
+      }
+    } catch (e) {
+      log('Error fetching departments: $e');
+    }
   }
 
   Future<void> _playSound() async {
@@ -130,7 +192,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
       }
       quantityOrRemark = quantity;
     } else {
-      quantityOrRemark = 'Tidak Dapat Dihitung'; // Remarks dihapus
+      quantityOrRemark = 'Tidak Dapat Dihitung';
     }
 
     if (barcode.length != 13) {
@@ -153,6 +215,18 @@ class _AddItemScreenState extends State<AddItemScreen> {
       return;
     }
 
+    List<String> allowedDepartments = [
+      'general'
+    ]; // Default value for items without a specific department classification
+    if (_hasClassification &&
+        _selectedClassification != null &&
+        _departments.contains(_selectedClassification!)) {
+      allowedDepartments = [_selectedClassification!];
+    } else if (_hasClassification && _selectedClassification != null) {
+      // Handle cases where classification is set but not a department
+      allowedDepartments = ['general'];
+    }
+
     // Tampilkan dialog konfirmasi
     bool? confirmAdd = await showDialog<bool>(
       context: context,
@@ -169,6 +243,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
                 if (_hasExpiryDate && _selectedExpiryDate != null)
                   Text(
                       'Expiry Date: ${DateFormat('dd-MM-yyyy').format(_selectedExpiryDate!)}'),
+                if (_hasClassification && _selectedClassification != null)
+                  Text('Klasifikasi: $_selectedClassification'),
+                const SizedBox(height: 10),
+                Text('Akses Departemen: ${allowedDepartments.join(', ')}'),
               ],
             ),
           ),
@@ -219,6 +297,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
         createdAt: DateTime.now(),
         expiryDate: _hasExpiryDate ? _selectedExpiryDate : null,
         classification: _hasClassification ? _selectedClassification : null,
+        allowedDepartments: allowedDepartments,
       );
 
       await _firestore.collection('items').add(newItem.toFirestore());
@@ -246,7 +325,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
           _selectedExpiryDate = null;
           _isQuantityBased = true;
           _selectedClassification = null;
-          _hasExpiryDate = true;
+          _hasExpiryDate = false;
           _hasClassification = true;
         });
       }
@@ -512,6 +591,70 @@ class _AddItemScreenState extends State<AddItemScreen> {
                                     return null;
                                   },
                                 ),
+                              ),
+                            const SizedBox(height: 15),
+                            if (_userRole != 'supervisor' &&
+                                _userRole != 'staff')
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Punya Klasifikasi?'),
+                                  Switch(
+                                    value: _hasClassification,
+                                    onChanged: (bool value) {
+                                      setState(() {
+                                        _hasClassification = value;
+                                        if (!value) {
+                                          _selectedClassification = null;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            if (_hasClassification &&
+                                _classifications.isNotEmpty &&
+                                (_userRole == 'admin' || _userRole == 'dev'))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 15.0),
+                                child: DropdownButtonFormField<String>(
+                                  value: _selectedClassification,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Klasifikasi',
+                                    border: OutlineInputBorder(),
+                                    filled: true,
+                                    fillColor: Color(0xFFF3F4F6),
+                                  ),
+                                  items: _classifications
+                                      .map((classification) =>
+                                          DropdownMenuItem<String>(
+                                            value: classification,
+                                            child: Text(classification),
+                                          ))
+                                      .toList(),
+                                  onChanged: (String? newValue) {
+                                    setState(() {
+                                      _selectedClassification = newValue;
+                                    });
+                                  },
+                                ),
+                              )
+                            else if (_hasClassification &&
+                                _classifications.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.only(top: 15.0),
+                                child: Text(
+                                    'Tidak ada klasifikasi yang tersedia. Harap tambahkan di halaman Item List.',
+                                    style: TextStyle(color: Colors.red)),
+                              ),
+                            if (_userRole == 'supervisor' ||
+                                _userRole == 'staff')
+                              const Padding(
+                                padding: EdgeInsets.only(top: 15.0),
+                                child: Text(
+                                    'Klasifikasi hanya dapat diatur oleh Admin atau Developer.',
+                                    style: TextStyle(color: Colors.grey)),
                               ),
                           ],
                         ),

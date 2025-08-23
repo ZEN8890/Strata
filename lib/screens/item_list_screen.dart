@@ -1,3 +1,4 @@
+// Path: lib/screens/item_list_screen.dart
 import 'package:flutter/material.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
@@ -13,6 +14,7 @@ import 'package:another_flushbar/flushbar.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ItemListScreen extends StatefulWidget {
   const ItemListScreen({super.key});
@@ -24,14 +26,18 @@ class ItemListScreen extends StatefulWidget {
 class _ItemListScreenState extends State<ItemListScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  String _searchQuery = '';
   String _expiryFilter = 'Semua Item';
   String _stockFilter = 'Semua Item';
   String _classificationFilter = 'Semua Item';
 
+  String _userRole = 'staff';
+  String _userDepartment = 'unknown';
   bool _isGroupView = false;
   List<String> _classifications = [];
+  List<String> _departments = [];
   Timer? _notificationTimer;
   bool _isLoadingExport = false;
   bool _isLoadingImport = false;
@@ -41,6 +47,8 @@ class _ItemListScreenState extends State<ItemListScreen> {
     super.initState();
     _searchController.addListener(_onSearchChanged);
     _fetchClassifications();
+    _fetchDepartments();
+    _fetchUserData();
   }
 
   @override
@@ -56,6 +64,23 @@ class _ItemListScreenState extends State<ItemListScreen> {
       setState(() {
         _searchQuery = _searchController.text;
       });
+    }
+  }
+
+  Future<void> _fetchUserData() async {
+    User? currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            _userRole = userData['role'] ?? 'staff';
+            _userDepartment = userData['department'] ?? 'unknown';
+          });
+        }
+      }
     }
   }
 
@@ -93,6 +118,135 @@ class _ItemListScreenState extends State<ItemListScreen> {
     }
   }
 
+  Future<void> _fetchDepartments() async {
+    try {
+      final doc =
+          await _firestore.collection('config').doc('departments').get();
+      if (mounted) {
+        if (doc.exists) {
+          final data = doc.data();
+          if (data != null && data['list'] is List) {
+            setState(() {
+              _departments = List<String>.from(data['list']);
+            });
+          }
+        } else {
+          final defaultDepartments = [
+            'kitchen',
+            'barista',
+            'bartender',
+            'general'
+          ];
+          await _firestore.collection('config').doc('departments').set({
+            'list': defaultDepartments,
+          });
+          setState(() {
+            _departments = defaultDepartments;
+          });
+        }
+      }
+    } catch (e) {
+      log('Error fetching departments: $e');
+    }
+  }
+
+  Future<void> _renameClassification(String oldName, String newName) async {
+    try {
+      // 1. Update the classifications list in Firestore
+      List<String> updatedClassifications = List.from(_classifications);
+      final index = updatedClassifications.indexOf(oldName);
+      if (index != -1) {
+        updatedClassifications[index] = newName;
+      }
+      await _firestore.collection('config').doc('classifications').set({
+        'list': updatedClassifications,
+      });
+
+      // 2. Perform a batch update on all items with the old classification name
+      WriteBatch batch = _firestore.batch();
+      QuerySnapshot snapshot = await _firestore
+          .collection('items')
+          .where('classification', isEqualTo: oldName)
+          .get();
+
+      for (var doc in snapshot.docs) {
+        batch.update(doc.reference, {'classification': newName});
+      }
+      await batch.commit();
+
+      if (mounted) {
+        setState(() {
+          _classifications = updatedClassifications;
+        });
+        _showNotification('Berhasil!',
+            'Klasifikasi "$oldName" berhasil diubah menjadi "$newName".');
+      }
+    } catch (e) {
+      log('Error renaming classification: $e');
+      _showNotification('Gagal', 'Gagal mengubah nama klasifikasi: $e',
+          isError: true);
+    }
+  }
+
+  Future<void> _manageClassificationDeletion(
+      String classificationToDelete) async {
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Konfirmasi Hapus Klasifikasi'),
+        content: Text(
+            'Apakah Anda yakin ingin menghapus klasifikasi "$classificationToDelete"? Semua item dengan klasifikasi ini akan disetel menjadi "Tidak Terklasifikasi".'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        // 1. Remove the classification from the global list
+        List<String> updatedClassifications = List.from(_classifications);
+        updatedClassifications.remove(classificationToDelete);
+        await _firestore.collection('config').doc('classifications').set({
+          'list': updatedClassifications,
+        });
+
+        // 2. Perform a batch update on all items with the old classification name
+        WriteBatch batch = _firestore.batch();
+        QuerySnapshot snapshot = await _firestore
+            .collection('items')
+            .where('classification', isEqualTo: classificationToDelete)
+            .get();
+
+        for (var doc in snapshot.docs) {
+          batch.update(doc.reference, {'classification': null});
+        }
+        await batch.commit();
+
+        if (mounted) {
+          // Rebuild the main widget with the updated list
+          setState(() {
+            _classifications = updatedClassifications;
+          });
+          _showNotification('Berhasil!',
+              'Klasifikasi "$classificationToDelete" dan item terkait berhasil diperbarui.');
+        }
+      } catch (e) {
+        log('Error deleting classification: $e');
+        _showNotification('Gagal', 'Gagal menghapus klasifikasi: $e',
+            isError: true);
+      }
+    }
+  }
+
   Future<void> _manageClassifications() async {
     List<String> tempClassifications = List.from(_classifications);
     await showDialog(
@@ -116,28 +270,29 @@ class _ItemListScreenState extends State<ItemListScreen> {
                                     await _showEditClassificationDialog(
                                         context, c);
                                 if (newName != null && newName.isNotEmpty) {
-                                  if (!tempClassifications.contains(newName)) {
-                                    setStateSB(() {
-                                      final index =
-                                          tempClassifications.indexOf(c);
-                                      if (index != -1) {
-                                        tempClassifications[index] = newName;
-                                      }
-                                    });
-                                  } else {
-                                    _showNotification(
-                                        'Gagal', 'Klasifikasi sudah ada.',
-                                        isError: true);
+                                  if (newName != c) {
+                                    if (!tempClassifications
+                                        .contains(newName)) {
+                                      _renameClassification(c, newName);
+                                      Navigator.of(context).pop();
+                                    } else {
+                                      _showNotification(
+                                          'Gagal', 'Klasifikasi sudah ada.',
+                                          isError: true);
+                                    }
                                   }
                                 }
                               },
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
+                              onPressed: () async {
+                                // Call the deletion function and refresh the dialog state
+                                await _manageClassificationDeletion(c);
                                 setStateSB(() {
                                   tempClassifications.remove(c);
                                 });
+                                // Don't pop the dialog here, let the state update
                               },
                             ),
                           ],
@@ -202,6 +357,83 @@ class _ItemListScreenState extends State<ItemListScreen> {
     );
   }
 
+  Future<void> _manageDepartmentAccess(String classification) async {
+    QuerySnapshot snapshot = await _firestore
+        .collection('items')
+        .where('classification', isEqualTo: classification)
+        .get();
+
+    List<Item> itemsInGroup = snapshot.docs
+        .map((doc) =>
+            Item.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
+        .toList();
+
+    Set<String> currentAllowedDepartments = {};
+    if (itemsInGroup.isNotEmpty) {
+      currentAllowedDepartments.addAll(itemsInGroup.first.allowedDepartments);
+    }
+
+    List<String> selectedDepartments = List.from(currentAllowedDepartments);
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateSB) {
+            return AlertDialog(
+              title: Text('Atur Akses Departemen untuk\n"$classification"'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Departemen yang diizinkan:'),
+                  ..._departments.map((dept) {
+                    return CheckboxListTile(
+                      title: Text(dept.toUpperCase()),
+                      value: selectedDepartments.contains(dept),
+                      onChanged: (bool? isChecked) {
+                        setStateSB(() {
+                          if (isChecked == true) {
+                            selectedDepartments.add(dept);
+                          } else {
+                            selectedDepartments.remove(dept);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    WriteBatch batch = _firestore.batch();
+                    for (var item in itemsInGroup) {
+                      batch.update(
+                        _firestore.collection('items').doc(item.id),
+                        {'allowedDepartments': selectedDepartments},
+                      );
+                    }
+                    await batch.commit();
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                      _showNotification('Berhasil',
+                          'Akses departemen berhasil diperbarui untuk grup "$classification".');
+                    }
+                  },
+                  child: const Text('Simpan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _showMassClassificationDialog(BuildContext context) async {
     List<Item> allItems = [];
     List<String> selectedItemsIds = [];
@@ -249,15 +481,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
                         onChanged: (String? newValue) {
                           setStateSB(() {
                             selectedClassification = newValue;
-                            if (newValue != null) {
-                              selectedItemsIds = allItems
-                                  .where(
-                                      (item) => item.classification == newValue)
-                                  .map((item) => item.id!)
-                                  .toList();
-                            } else {
-                              selectedItemsIds.clear();
-                            }
+                            // Keep selected items, do not reset here
                           });
                         },
                       ),
@@ -543,7 +767,8 @@ class _ItemListScreenState extends State<ItemListScreen> {
         TextCellValue('Kuantitas/Remarks'),
         TextCellValue('Tanggal Ditambahkan'),
         TextCellValue('Expiry Date'),
-        TextCellValue('Klasifikasi')
+        TextCellValue('Klasifikasi'),
+        TextCellValue('Allowed Departments')
       ]);
 
       QuerySnapshot snapshot =
@@ -565,7 +790,8 @@ class _ItemListScreenState extends State<ItemListScreen> {
           TextCellValue(item.quantityOrRemark.toString()),
           TextCellValue(formattedDate),
           TextCellValue(formattedExpiryDate),
-          TextCellValue(item.classification ?? 'N/A')
+          TextCellValue(item.classification ?? 'N/A'),
+          TextCellValue(item.allowedDepartments.join(', '))
         ]);
       }
       if (defaultSheetName != 'Daftar Barang')
@@ -662,6 +888,8 @@ class _ItemListScreenState extends State<ItemListScreen> {
         final quantityOrRemarkIndex = headerRow.indexOf('Kuantitas/Remarks');
         final expiryDateIndex = headerRow.indexOf('Expiry Date');
         final classificationIndex = headerRow.indexOf('Klasifikasi');
+        final allowedDepartmentsIndex =
+            headerRow.indexOf('Allowed Departments');
 
         if (nameIndex == -1 ||
             barcodeIndex == -1 ||
@@ -702,6 +930,16 @@ class _ItemListScreenState extends State<ItemListScreen> {
                   ? row[classificationIndex]?.value?.toString()
                   : '') ??
               '';
+
+          List<String> allowedDepartments = [];
+          if (allowedDepartmentsIndex != -1 &&
+              row.length > allowedDepartmentsIndex &&
+              row[allowedDepartmentsIndex] != null) {
+            String departmentsString =
+                row[allowedDepartmentsIndex]?.value?.toString() ?? '';
+            allowedDepartments =
+                departmentsString.split(',').map((e) => e.trim()).toList();
+          }
 
           if (name.isEmpty || barcode.isEmpty) {
             log('Skipping row $i: Nama Barang atau Barcode kosong.');
@@ -752,6 +990,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
               'expiryDate': expiryDate,
               'classification':
                   classification.isNotEmpty ? classification : null,
+              'allowedDepartments': allowedDepartments,
             });
             updatedCount++;
             log('Item updated: $name with barcode $barcode');
@@ -766,6 +1005,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
                   expiryDate: expiryDate,
                   classification:
                       classification.isNotEmpty ? classification : null,
+                  allowedDepartments: allowedDepartments,
                 ).toFirestore());
             importedCount++;
             log('Item imported: $name with barcode $barcode');
@@ -1094,12 +1334,24 @@ class _ItemListScreenState extends State<ItemListScreen> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             color: Colors.black87,
             child: ExpansionTile(
-              title: Text(
-                '$classification (${items.length} item)',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.white),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$classification (${items.length} item)',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.white),
+                    ),
+                  ),
+                  if (_userRole == 'admin' || _userRole == 'dev')
+                    IconButton(
+                      icon: const Icon(Icons.lock_open, color: Colors.white),
+                      tooltip: 'Kelola Akses Departemen',
+                      onPressed: () => _manageDepartmentAccess(classification),
+                    ),
+                ],
               ),
               children: items.map((item) {
                 Color iconColor = Colors.white;
@@ -1154,6 +1406,12 @@ class _ItemListScreenState extends State<ItemListScreen> {
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white)),
+                      if (item.classification != null)
+                        Text('Klasifikasi: ${item.classification}',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
                     ],
                   ),
                   trailing: Row(
@@ -1180,6 +1438,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
     return Scaffold(
       body: GestureDetector(
         onHorizontalDragEnd: (details) {
+          if (_userRole != 'admin' && _userRole != 'dev') return;
           if (details.primaryVelocity! > 0) {
             if (_isGroupView) {
               setState(() {
@@ -1225,69 +1484,72 @@ class _ItemListScreenState extends State<ItemListScreen> {
                     ),
                   ),
                   const SizedBox(height: 15),
-                  Card(
-                    margin: EdgeInsets.zero,
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _isLoadingExport
-                                  ? null
-                                  : () => _exportDataToExcel(context),
-                              icon: _isLoadingExport
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          color: Colors.white, strokeWidth: 2))
-                                  : const Icon(Icons.upload_file),
-                              label: Text(_isLoadingExport
-                                  ? 'Mengekspor...'
-                                  : 'Ekspor Excel'),
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8)),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12)),
+                  if (_userRole == 'admin' || _userRole == 'dev')
+                    Card(
+                      margin: EdgeInsets.zero,
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isLoadingExport
+                                    ? null
+                                    : () => _exportDataToExcel(context),
+                                icon: _isLoadingExport
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2))
+                                    : const Icon(Icons.upload_file),
+                                label: Text(_isLoadingExport
+                                    ? 'Mengekspor...'
+                                    : 'Ekspor Excel'),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8)),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12)),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _isLoadingImport
-                                  ? null
-                                  : () => _importDataFromExcel(context),
-                              icon: _isLoadingImport
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          color: Colors.white, strokeWidth: 2))
-                                  : const Icon(Icons.download_for_offline),
-                              label: Text(_isLoadingImport
-                                  ? 'Mengimpor...'
-                                  : 'Impor Excel'),
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.indigo,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8)),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isLoadingImport
+                                    ? null
+                                    : () => _importDataFromExcel(context),
+                                icon: _isLoadingImport
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2))
+                                    : const Icon(Icons.download_for_offline),
+                                label: Text(_isLoadingImport
+                                    ? 'Mengimpor...'
+                                    : 'Impor Excel'),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.indigo,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8)),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12)),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                   const SizedBox(height: 15),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1298,25 +1560,26 @@ class _ItemListScreenState extends State<ItemListScreen> {
                             fontWeight: FontWeight.bold, fontSize: 18),
                       ),
                       const Spacer(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                                _isGroupView ? Icons.list : Icons.folder_open,
-                                color:
-                                    _isGroupView ? Colors.blue : Colors.blue),
-                            onPressed: () {
-                              setState(() {
-                                _isGroupView = !_isGroupView;
-                                _expiryFilter = 'Semua Item';
-                                _stockFilter = 'Semua Item';
-                                _classificationFilter = 'Semua Item';
-                              });
-                            },
-                          ),
-                        ],
-                      ),
+                      if (_userRole == 'admin' || _userRole == 'dev')
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                  _isGroupView ? Icons.list : Icons.folder_open,
+                                  color:
+                                      _isGroupView ? Colors.blue : Colors.blue),
+                              onPressed: () {
+                                setState(() {
+                                  _isGroupView = !_isGroupView;
+                                  _expiryFilter = 'Semua Item';
+                                  _stockFilter = 'Semua Item';
+                                  _classificationFilter = 'Semua Item';
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                   if (_isGroupView)
@@ -1511,6 +1774,12 @@ class _ItemListScreenState extends State<ItemListScreen> {
                       .map((doc) => Item.fromFirestore(
                           doc.data() as Map<String, dynamic>, doc.id))
                       .toList();
+
+                  if (_userRole != 'admin' && _userRole != 'dev') {
+                    allItems = allItems.where((item) {
+                      return item.allowedDepartments.contains(_userDepartment);
+                    }).toList();
+                  }
 
                   if (_isGroupView) {
                     Map<String, List<Item>> groupedItems = {};

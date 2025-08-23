@@ -1,3 +1,4 @@
+// Path: lib/screens/time_log_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:Strata_lite/models/log_entry.dart';
@@ -135,9 +136,13 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
 
       for (var doc in usersSnapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        final department = data['department'] as String?;
-        if (department != null && department.isNotEmpty) {
-          uniqueDepartments.add(department);
+        final role = data['role'] as String? ?? 'staff';
+        // Filter out 'admin' and 'dev' roles
+        if (role != 'admin' && role != 'dev') {
+          final department = data['department'] as String?;
+          if (department != null && department.isNotEmpty) {
+            uniqueDepartments.add(department);
+          }
         }
       }
 
@@ -344,15 +349,15 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
       }
 
       sheetObject.appendRow([
-        TextCellValue('Tipe Log'), // Added
+        TextCellValue('Tipe Log'),
         TextCellValue('Nama Barang'),
         TextCellValue('Barcode'),
         TextCellValue('Kuantitas/Remarks'),
         TextCellValue('Tanggal & Waktu'),
         TextCellValue('Nama Staff'),
         TextCellValue('Departemen'),
-        TextCellValue('Remarks Tambahan'), // Changed
-        TextCellValue('Sisa Stok'), // Added
+        TextCellValue('Remarks Tambahan'),
+        TextCellValue('Sisa Stok'),
       ]);
 
       QuerySnapshot snapshot = await _firestore
@@ -424,12 +429,8 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
 
       for (var logEntry in filteredLogs) {
         String formattedDateTime =
-            '${logEntry.timestamp.day.toString().padLeft(2, '0')}-'
-            '${logEntry.timestamp.month.toString().padLeft(2, '0')}-'
-            '${logEntry.timestamp.year} '
-            '${logEntry.timestamp.hour.toString().padLeft(2, '0')}:'
-            '${logEntry.timestamp.minute.toString().padLeft(2, '0')}:'
-            '${logEntry.timestamp.second.toString().padLeft(2, '0')}';
+            '${DateFormat('dd-MM-yyyy').format(logEntry.timestamp)} '
+            '${DateFormat('HH:mm:ss').format(logEntry.timestamp)}';
 
         // Check if quantityOrRemark is int and is positive
         String logType =
@@ -438,7 +439,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                 : 'Pengambilan';
 
         sheetObject.appendRow([
-          TextCellValue(logType), // Added
+          TextCellValue(logType),
           TextCellValue(logEntry.itemName),
           TextCellValue(logEntry.barcode),
           TextCellValue(logEntry.quantityOrRemark.toString()),
@@ -446,7 +447,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
           TextCellValue(logEntry.staffName),
           TextCellValue(logEntry.staffDepartment),
           TextCellValue(logEntry.remarks ?? ''),
-          TextCellValue(logEntry.remainingStock?.toString() ?? '-'), // Added
+          TextCellValue(logEntry.remainingStock?.toString() ?? '-'),
         ]);
       }
 
@@ -1070,7 +1071,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                             '${DateFormat('HH:mm:ss').format(logEntry.timestamp)}';
 
                         bool isAdding = logEntry.quantityOrRemark is int &&
-                            logEntry.quantityOrRemark > 0;
+                            (logEntry.quantityOrRemark as int) > 0;
                         Color logColor =
                             isAdding ? Colors.green[50]! : Colors.red[50]!;
                         Color logBorderColor =
@@ -1191,11 +1192,12 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
                                           size: 20, color: Colors.blueGrey),
                                       const SizedBox(width: 10),
                                       Text(
-                                          'Sisa Stok: $stockTextBefore -> $stockTextAfter',
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              color: stockColor,
-                                              fontWeight: FontWeight.bold)),
+                                        'Sisa Stok: $stockTextBefore -> $stockTextAfter',
+                                        style: TextStyle(
+                                            fontSize: 16,
+                                            color: stockColor,
+                                            fontWeight: FontWeight.bold),
+                                      ),
                                     ],
                                   ),
                                 ),

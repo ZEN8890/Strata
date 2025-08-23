@@ -9,6 +9,7 @@ class Item {
   final DateTime createdAt;
   final DateTime? expiryDate;
   final String? classification;
+  final List<String> allowedDepartments;
 
   Item({
     this.id,
@@ -18,6 +19,7 @@ class Item {
     required this.createdAt,
     this.expiryDate,
     this.classification,
+    required this.allowedDepartments,
   });
 
   factory Item.fromFirestore(Map<String, dynamic> firestoreData, String docId) {
@@ -29,6 +31,8 @@ class Item {
       createdAt: (firestoreData['createdAt'] as Timestamp).toDate(),
       expiryDate: (firestoreData['expiryDate'] as Timestamp?)?.toDate(),
       classification: firestoreData['classification'],
+      allowedDepartments:
+          List<String>.from(firestoreData['allowedDepartments'] ?? []),
     );
   }
 
@@ -40,6 +44,7 @@ class Item {
       'createdAt': createdAt,
       'expiryDate': expiryDate,
       'classification': classification,
+      'allowedDepartments': allowedDepartments,
     };
   }
 }

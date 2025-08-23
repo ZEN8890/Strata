@@ -25,7 +25,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController =
       TextEditingController(); // Email biasanya tidak diedit langsung
-  final TextEditingController _phoneController = TextEditingController();
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -40,7 +39,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
     super.dispose();
   }
 
@@ -104,12 +102,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (userDoc.exists) {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         _nameController.text = userData['name'] ?? '';
-        _phoneController.text = userData['phoneNumber'] ?? '';
-        log('User data loaded: Name=${_nameController.text}, Email=${_emailController.text}, Phone=${_phoneController.text}');
+        log('User data loaded: Name=${_nameController.text}, Email=${_emailController.text}');
       } else {
         // Jika dokumen user tidak ada, set nilai default
         _nameController.text = 'Nama Tidak Ditemukan';
-        _phoneController.text = '';
         log('Warning: User document not found in Firestore for UID: ${_currentUser!.uid}');
       }
     } catch (e) {
@@ -143,9 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _firestore.collection('users').doc(_currentUser!.uid).set(
           {
             'name': _nameController.text.trim(),
-            'email': _emailController.text
-                .trim(), // Pastikan email juga disimpan jika perlu
-            'phoneNumber': _phoneController.text.trim(),
+            'email': _emailController.text.trim(),
           },
           SetOptions(
               merge:
@@ -163,35 +157,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       });
     }
   }
-
-  // --- START NEW LOGOUT FUNCTION ---
-  Future<void> _logout() async {
-    setState(() {
-      _isLoading = true; // Show loading indicator during logout
-    });
-    try {
-      await _auth.signOut();
-      if (!context.mounted) return;
-      // Navigate to LoginScreen and remove all previous routes
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-        (Route<dynamic> route) =>
-            false, // This predicate ensures all routes are removed
-      );
-      _showNotification('Logout Berhasil', 'Anda telah berhasil keluar.',
-          isError: false);
-      log('User logged out successfully.');
-    } catch (e) {
-      _showNotification('Logout Gagal', 'Terjadi kesalahan saat logout: $e',
-          isError: true);
-      log('Error during logout: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-  // --- END NEW LOGOUT FUNCTION ---
 
   @override
   Widget build(BuildContext context) {
@@ -244,16 +209,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 prefixIcon: Icon(Icons.email),
                               ),
                             ),
-                            const SizedBox(height: 15),
-                            TextField(
-                              controller: _phoneController,
-                              decoration: const InputDecoration(
-                                labelText: 'Nomor Telepon',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.phone),
-                              ),
-                              keyboardType: TextInputType.phone,
-                            ),
                           ],
                         ),
                       ),
@@ -266,30 +221,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ? const CircularProgressIndicator(
                                 color: Colors.white)
                             : const Text('Simpan Perubahan'),
-                      ),
-                    ),
-                    const SizedBox(height: 20), // Spacer for logout button
-                    Center(
-                      child: ElevatedButton.icon(
-                        // New Logout Button
-                        onPressed:
-                            _isLoading ? null : _logout, // Disable if loading
-                        icon: _isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2))
-                            : const Icon(Icons.logout),
-                        label: Text(_isLoading ? 'Logging out...' : 'Logout'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red, // Red for logout
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                        ),
                       ),
                     ),
                   ],

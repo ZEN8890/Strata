@@ -31,23 +31,15 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Timer? _notificationTimer;
   final List<String> _departments = [
-    'Marketing',
-    'Sales',
-    'HR',
-    'Finance',
-    'FO',
-    'FBS',
-    'FBP',
-    'HK',
-    'Engineering',
-    'Security',
-    'IT'
+    'kitchen',
+    'barista',
+    'bartender',
   ];
-  final List<String> _roles = [
+  final List<String> _roles = ['staff', 'admin', 'supervisor', 'dev'];
+  final List<String> _userRolesForDropdown = [
     'staff',
-    'admin',
-    'supervisor'
-  ]; // DIUBAH: MENAMBAHKAN 'dev'
+    'supervisor',
+  ];
 
   bool _obscureNewUserPassword = true;
   bool _obscureAdminPassword = true;
@@ -115,10 +107,24 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Future<void> _addEditUser({DocumentSnapshot? userToEdit}) async {
     final bool isEditing = userToEdit != null;
+
+    if (isEditing) {
+      final userRole = (userToEdit!.data() as Map<String, dynamic>)['role'];
+      if (userRole == 'admin' || userRole == 'dev') {
+        _showNotification(
+          'Akses Ditolak',
+          'Akun Admin dan Dev tidak dapat diedit melalui halaman ini.',
+          isError: true,
+        );
+        return;
+      }
+    }
+
     final _formKey = GlobalKey<FormState>();
 
-    final String? currentRole =
-        isEditing ? (userToEdit!.data() as Map<String, dynamic>)['role'] : null;
+    final String? currentRole = isEditing
+        ? (userToEdit!.data() as Map<String, dynamic>)['role']
+        : _userRolesForDropdown.first;
     final bool isDev = currentRole == 'dev';
 
     TextEditingController nameController = TextEditingController(
@@ -131,17 +137,19 @@ class _UsersScreenState extends State<UsersScreen> {
                 .toString()
                 .split('@')[0]
             : '');
-    TextEditingController phoneController = TextEditingController(
-        text: isEditing
-            ? (userToEdit!.data() as Map<String, dynamic>)['phoneNumber']
-            : '');
     TextEditingController passwordController = TextEditingController();
-    String? selectedRole = isEditing
-        ? (userToEdit!.data() as Map<String, dynamic>)['role']
-        : _roles.first;
+    String? selectedRole = currentRole;
 
-    if (!isEditing && !_roles.contains(selectedRole)) {
-      selectedRole = _roles.first;
+    String? selectedDepartment = isEditing
+        ? (userToEdit!.data() as Map<String, dynamic>)['department']
+        : _departments.first;
+
+    if (!isEditing && !_userRolesForDropdown.contains(selectedRole)) {
+      selectedRole = _userRolesForDropdown.first;
+    }
+
+    if (!isEditing && !_departments.contains(selectedDepartment)) {
+      selectedDepartment = _departments.first;
     }
 
     String? adminEmail = _auth.currentUser?.email;
@@ -197,20 +205,8 @@ class _UsersScreenState extends State<UsersScreen> {
                   ),
                   const SizedBox(height: 10),
                 ],
-                TextFormField(
-                  controller: phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nomor Telepon',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  value: isEditing && isDev ? 'dev' : selectedRole,
+                  value: selectedRole,
                   decoration: const InputDecoration(
                     labelText: 'Role',
                     border: OutlineInputBorder(),
@@ -218,14 +214,35 @@ class _UsersScreenState extends State<UsersScreen> {
                     contentPadding:
                         EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
-                  items: (isEditing && isDev ? ['dev'] : _roles)
+                  items: _userRolesForDropdown
                       .map((role) => DropdownMenuItem(
                           value: role, child: Text(role.toUpperCase())))
                       .toList(),
-                  onChanged: (value) => selectedRole = value,
+                  onChanged: (value) => setState(() => selectedRole = value),
                   validator: (value) =>
                       value == null || value.isEmpty ? 'Pilih role' : null,
                 ),
+                const SizedBox(height: 10),
+                if (selectedRole != 'admin' && selectedRole != 'dev')
+                  DropdownButtonFormField<String>(
+                    value: selectedDepartment,
+                    decoration: const InputDecoration(
+                      labelText: 'Departemen',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    items: _departments
+                        .map((dept) =>
+                            DropdownMenuItem(value: dept, child: Text(dept)))
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => selectedDepartment = value),
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Pilih departemen'
+                        : null,
+                  ),
                 const SizedBox(height: 10),
                 if (!isEditing) ...[
                   StatefulBuilder(builder: (context, setInnerState) {
@@ -300,14 +317,13 @@ class _UsersScreenState extends State<UsersScreen> {
             onPressed: () async {
               if (_formKey.currentState!.validate()) {
                 if (isEditing) {
-                  // Perubahan: Hanya update data Firestore, tidak perlu Cloud Functions
                   await _firestore
                       .collection('users')
                       .doc(userToEdit!.id)
                       .update({
                     'name': nameController.text.trim(),
-                    'phoneNumber': phoneController.text.trim(),
-                    'department': isDev ? 'Dev' : selectedRole,
+                    // 'phoneNumber': phoneController.text.trim(), // Dihapus
+                    'department': selectedDepartment,
                     'role': selectedRole,
                   });
                   if (mounted) {
@@ -326,31 +342,25 @@ class _UsersScreenState extends State<UsersScreen> {
                   final newUserEmail =
                       '${usernameController.text.trim()}@strata-lite.com';
                   try {
-                    // Simpan UID admin saat ini sebelum membuat pengguna baru
                     final String? currentAdminUid = _auth.currentUser?.uid;
 
-                    // Buat pengguna baru (ini akan mengalihkan sesi)
                     await _auth.createUserWithEmailAndPassword(
                       email: newUserEmail,
                       password: passwordController.text.trim(),
                     );
 
-                    // Ambil UID pengguna baru
                     final String? newUserId = _auth.currentUser?.uid;
 
-                    // Tambahkan profil pengguna baru ke Firestore
                     if (newUserId != null) {
                       await _firestore.collection('users').doc(newUserId).set({
                         'name': nameController.text.trim(),
                         'email': newUserEmail,
-                        'phoneNumber': phoneController.text.trim(),
-                        'department': selectedRole,
+                        'department': selectedDepartment,
                         'role': selectedRole,
                         'createdAt': FieldValue.serverTimestamp(),
                       });
                     }
 
-                    // Log out pengguna baru, lalu login kembali sebagai admin
                     if (currentAdminUid != null &&
                         adminPasswordController.text.isNotEmpty) {
                       await _auth.signInWithEmailAndPassword(
@@ -401,9 +411,9 @@ class _UsersScreenState extends State<UsersScreen> {
       final userData = userDoc.data() as Map<String, dynamic>?;
       final userRole = userData?['role'];
 
-      // DIUBAH: Tambahkan logika untuk mencegah penghapusan akun 'dev'
-      if (userRole == 'dev') {
-        _showNotification('Akses Ditolak', 'Akun Dev tidak dapat dihapus.',
+      if (userRole == 'dev' || userRole == 'admin') {
+        _showNotification(
+            'Akses Ditolak', 'Akun Admin dan Dev tidak dapat dihapus.',
             isError: true);
         return;
       }
@@ -455,27 +465,16 @@ class _UsersScreenState extends State<UsersScreen> {
       excel.rename(defaultSheetName, 'Daftar Pengguna');
       final sheet = excel['Daftar Pengguna'];
 
-      List<String> headers = [
-        'Nama Lengkap',
-        'Username',
-        'Nomor Telepon',
-        'Departemen',
-        'Role'
-      ];
+      List<String> headers = ['Nama Lengkap', 'Username', 'Departemen', 'Role'];
       sheet.insertRowIterables(
           headers.map((e) => TextCellValue(e)).toList(), 0);
 
       for (int i = 0; i < usersData.length; i++) {
         final userData = usersData[i].data();
-        String phoneNumber = userData['phoneNumber']?.toString() ?? '';
-        if (phoneNumber.startsWith('0')) {
-          phoneNumber = "'" + phoneNumber;
-        }
 
         List<dynamic> row = [
           userData['name'] ?? '',
           (userData['email'] ?? '').toString().split('@')[0],
-          phoneNumber,
           userData['department'] ?? '',
           userData['role'] ?? '',
         ];
@@ -544,10 +543,11 @@ class _UsersScreenState extends State<UsersScreen> {
 
         final nameIndex = headerRow.indexOf('Nama Lengkap');
         final usernameIndex = headerRow.indexOf('Username');
-        final phoneIndex = headerRow.indexOf('Nomor Telepon');
         final departmentIndex = headerRow.indexOf('Departemen');
         final roleIndex = headerRow.indexOf('Role');
         final passwordIndex = headerRow.indexOf('Password');
+        final phoneIndex = headerRow.indexOf(
+            'Nomor Telepon'); // Dihapus dari template tapi masih dicheck
 
         if (nameIndex == -1 ||
             usernameIndex == -1 ||
@@ -555,7 +555,7 @@ class _UsersScreenState extends State<UsersScreen> {
             roleIndex == -1 ||
             passwordIndex == -1) {
           _showNotification('Gagal Import',
-              'File Excel tidak memiliki semua kolom yang diperlukan (Nama Lengkap, Username, Nomor Telepon, Departemen, Role, Password).',
+              'File Excel tidak memiliki semua kolom yang diperlukan (Nama Lengkap, Username, Departemen, Role, Password).',
               isError: true);
           return;
         }
@@ -573,8 +573,6 @@ class _UsersScreenState extends State<UsersScreen> {
           final String name = (row[nameIndex]?.value?.toString().trim() ?? '');
           final String username =
               (row[usernameIndex]?.value?.toString().trim() ?? '');
-          final String phoneNumber =
-              (row[phoneIndex]?.value?.toString().trim() ?? '');
           final String department =
               (row[departmentIndex]?.value?.toString().trim() ?? '');
           String role = (row[roleIndex]?.value?.toString().trim() ?? 'staff')
@@ -608,7 +606,6 @@ class _UsersScreenState extends State<UsersScreen> {
               'name': name,
               'email': newUserEmail,
               'password': password,
-              'phoneNumber': phoneNumber,
               'department': department,
               'role': role,
             });
@@ -699,7 +696,6 @@ class _UsersScreenState extends State<UsersScreen> {
       List<String> headers = [
         'Nama Lengkap',
         'Username',
-        'Nomor Telepon',
         'Departemen',
         'Role',
         'Password'
@@ -823,7 +819,6 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              const SizedBox(width: 10),
               IconButton(
                 icon: const Icon(Icons.more_vert),
                 onPressed: _showImportExportOptions,
@@ -861,15 +856,12 @@ class _UsersScreenState extends State<UsersScreen> {
                 final String department =
                     (data['department'] ?? '').toLowerCase();
                 final String role = (data['role'] ?? '').toLowerCase();
-                final String phoneNumber =
-                    (data['phoneNumber'] ?? '').toLowerCase();
                 final String username = email.split('@')[0];
 
                 return name.contains(lowerCaseQuery) ||
                     email.contains(lowerCaseQuery) ||
                     department.contains(lowerCaseQuery) ||
                     role.contains(lowerCaseQuery) ||
-                    phoneNumber.contains(lowerCaseQuery) ||
                     username.contains(lowerCaseQuery);
               }).toList();
 
@@ -890,7 +882,6 @@ class _UsersScreenState extends State<UsersScreen> {
                   final String name = userData['name'] ?? 'N/A';
                   final String email = userData['email'] ?? 'N/A';
                   final String username = email.split('@')[0];
-                  final String phoneNumber = userData['phoneNumber'] ?? 'N/A';
                   final String department = userData['department'] ?? 'N/A';
                   final String role = userData['role'] ?? 'N/A';
 
@@ -938,8 +929,6 @@ class _UsersScreenState extends State<UsersScreen> {
                           const SizedBox(height: 4),
                           Text('Username: $username',
                               style: const TextStyle(fontSize: 14)),
-                          Text('Telepon: $phoneNumber',
-                              style: const TextStyle(fontSize: 14)),
                           Text('Departemen: $department',
                               style: const TextStyle(fontSize: 14)),
                           Text('Role: ${role.toUpperCase()}',
@@ -953,13 +942,14 @@ class _UsersScreenState extends State<UsersScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.blue),
-                            tooltip: 'Edit User',
-                            onPressed: () => _addEditUser(userToEdit: userDoc),
-                          ),
-                          // DIUBAH: Sembunyikan tombol hapus untuk peran 'dev'
-                          if (role != 'dev')
+                          if (role != 'admin' && role != 'dev')
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              tooltip: 'Edit User',
+                              onPressed: () =>
+                                  _addEditUser(userToEdit: userDoc),
+                            ),
+                          if (role != 'admin' && role != 'dev')
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
                               tooltip: 'Hapus User',
