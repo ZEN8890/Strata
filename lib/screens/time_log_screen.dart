@@ -459,7 +459,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
       List<int>? fileBytes = excel.save();
       if (fileBytes != null) {
         final String fileName =
-            'Log_Inventaris_Strata_Lite_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+            'Log_Inventaris_Strata${DateTime.now().millisecondsSinceEpoch}.xlsx';
 
         if (defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.macOS ||
@@ -492,8 +492,7 @@ class _TimeLogScreenState extends State<TimeLogScreen> {
           final file = File(filePath);
           await file.writeAsBytes(fileBytes, flush: true);
 
-          await Share.shareXFiles([XFile(filePath)],
-              text: 'Data log Strata Lite');
+          await Share.shareXFiles([XFile(filePath)], text: 'Data log Strata');
 
           if (!context.mounted) return;
           _showNotification('Ekspor Berhasil',

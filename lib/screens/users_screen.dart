@@ -515,7 +515,7 @@ class _UsersScreenState extends State<UsersScreen> {
         final file = File(filePath);
         await file.writeAsBytes(Uint8List.fromList(excelBytes), flush: true);
         await Share.shareXFiles([XFile(filePath)],
-            text: 'Data pengguna Strata Lite');
+            text: 'Data pengguna Strata');
         if (!mounted) return;
         _showNotification('Ekspor Berhasil',
             'Data berhasil diekspor. Pilih aplikasi untuk menyimpan file.');
@@ -710,7 +710,7 @@ class _UsersScreenState extends State<UsersScreen> {
         final file = File(filePath);
         await file.writeAsBytes(Uint8List.fromList(excelBytes), flush: true);
         await Share.shareXFiles([XFile(filePath)],
-            text: 'Template impor pengguna Strata Lite');
+            text: 'Template impor pengguna Strata');
         if (!mounted) return;
         _showNotification('Berhasil!',
             'Template impor Excel berhasil diunduh. Pilih aplikasi untuk menyimpan file.',

@@ -854,7 +854,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
       List<int>? fileBytes = excel.save();
       if (fileBytes != null) {
         final String fileName =
-            'Daftar_Barang_Strata_Lite_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+            'Daftar_Barang_Strata${DateTime.now().millisecondsSinceEpoch}.xlsx';
         if (defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.linux) {
@@ -880,7 +880,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
           final file = File(filePath);
           await file.writeAsBytes(fileBytes, flush: true);
           await Share.shareXFiles([XFile(filePath)],
-              text: 'Data inventaris Strata Lite');
+              text: 'Data inventaris Strata');
           if (!context.mounted) return;
           _showNotification('Ekspor Berhasil',
               'Data berhasil diekspor. Pilih aplikasi untuk menyimpan file.');
