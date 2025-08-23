@@ -1005,8 +1005,8 @@ class _ItemListScreenState extends State<ItemListScreen> {
           dynamic quantityOrRemark;
           if (int.tryParse(quantityOrRemarkString) != null) {
             quantityOrRemark = int.parse(quantityOrRemarkString);
-            if (quantityOrRemark <= 0) {
-              log('Skipping row $i: Kuantitas harus angka positif.');
+            if (quantityOrRemark < 0) {
+              log('Skipping row $i: Kuantitas harus angka positif atau nol.');
               skippedCount++;
               continue;
             }
@@ -1020,7 +1020,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
           }
 
           DateTime? expiryDate;
-          if (expiryDateString.isNotEmpty) {
+          if (expiryDateString.isNotEmpty && expiryDateString != 'N/A') {
             try {
               expiryDate = DateFormat('dd-MM-yyyy').parse(expiryDateString);
             } catch (e) {
@@ -1356,16 +1356,18 @@ class _ItemListScreenState extends State<ItemListScreen> {
                           fontWeight: FontWeight.bold)),
               ],
             ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(Icons.delete, color: textColor),
-                  tooltip: 'Hapus Barang',
-                  onPressed: () => _deleteItem(context, item.id!),
-                ),
-              ],
-            ),
+            trailing: (_userRole == 'admin' || _userRole == 'dev')
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.delete, color: textColor),
+                        tooltip: 'Hapus Barang',
+                        onPressed: () => _deleteItem(context, item.id!),
+                      ),
+                    ],
+                  )
+                : null,
           ),
         );
       },
@@ -1469,16 +1471,19 @@ class _ItemListScreenState extends State<ItemListScreen> {
                                 fontWeight: FontWeight.bold)),
                     ],
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.white),
-                        tooltip: 'Hapus Barang',
-                        onPressed: () => _deleteItem(context, item.id!),
-                      ),
-                    ],
-                  ),
+                  trailing: (_userRole == 'admin' || _userRole == 'dev')
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon:
+                                  const Icon(Icons.delete, color: Colors.white),
+                              tooltip: 'Hapus Barang',
+                              onPressed: () => _deleteItem(context, item.id!),
+                            ),
+                          ],
+                        )
+                      : null,
                 );
               }).toList(),
             ),
@@ -1753,21 +1758,21 @@ class _ItemListScreenState extends State<ItemListScreen> {
 
                       final now = DateTime.now();
                       final difference = item.expiryDate!.difference(now);
-                      final differenceInMonths = difference.inDays / 30.44;
+                      final differenceInDays = difference.inDays;
 
                       if (_expiryFilter == '1 Tahun' &&
-                          differenceInMonths > 6 &&
-                          differenceInMonths <= 12) {
+                          differenceInDays > 180 &&
+                          differenceInDays <= 365) {
                         return true;
                       }
                       if (_expiryFilter == '6 Bulan' &&
-                          differenceInMonths > 5 &&
-                          differenceInMonths <= 6) {
+                          differenceInDays > 150 &&
+                          differenceInDays <= 180) {
                         return true;
                       }
                       if (_expiryFilter == '5 Bulan' &&
-                          differenceInMonths > 0 &&
-                          differenceInMonths <= 5) {
+                          differenceInDays > 0 &&
+                          differenceInDays <= 150) {
                         return true;
                       }
                       if (_expiryFilter == 'Expired' &&
@@ -1777,7 +1782,97 @@ class _ItemListScreenState extends State<ItemListScreen> {
 
                       return false;
                     }).toList();
-                    return _buildProductListView(filteredItems);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0, vertical: 8.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _expiryFilter,
+                                  decoration: InputDecoration(
+                                    labelText: 'Filter Kedaluwarsa',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8.0),
+                                    ),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                  ),
+                                  items: [
+                                    'Semua Item',
+                                    'Expired',
+                                    '5 Bulan',
+                                    '6 Bulan',
+                                    '1 Tahun',
+                                  ].map<DropdownMenuItem<String>>(
+                                      (String value) {
+                                    return DropdownMenuItem<String>(
+                                      value: value,
+                                      child: Text(value),
+                                    );
+                                  }).toList(),
+                                  onChanged: (String? newValue) {
+                                    if (newValue != null) {
+                                      setState(() {
+                                        _expiryFilter = newValue;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8.0),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _stockFilter,
+                                  decoration: InputDecoration(
+                                    labelText: 'Filter Stok',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8.0),
+                                    ),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                  ),
+                                  items: [
+                                    'Semua Item',
+                                    'Stok Habis',
+                                  ].map<DropdownMenuItem<String>>(
+                                      (String value) {
+                                    return DropdownMenuItem<String>(
+                                      value: value,
+                                      child: Text(value),
+                                    );
+                                  }).toList(),
+                                  onChanged: (String? newValue) {
+                                    if (newValue != null) {
+                                      setState(() {
+                                        _stockFilter = newValue;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0, vertical: 8.0),
+                          child: Text(
+                            'Menampilkan ${filteredItems.length} barang',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildProductListView(filteredItems),
+                        ),
+                      ],
+                    );
                   }
                 },
               ),

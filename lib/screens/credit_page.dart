@@ -120,7 +120,7 @@ class _CreditPageState extends State<CreditPage> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 40),
                 const Text(
-                  'version 1.0 | 15 agustus 2025',
+                  'version 1.1 | 23 agustus 2025',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 12,
