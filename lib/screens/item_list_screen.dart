@@ -134,6 +134,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
             'kitchen',
             'barista',
             'bartender',
+            'waiter/waiteress',
             'general'
           ];
           await _firestore.collection('config').doc('departments').set({

@@ -810,7 +810,13 @@ class _AiPageState extends State<AiPage> {
   }
 
   Future<String> _handleDepartmentInfoQuery(String query) async {
-    final allDepartments = ['kitchen', 'barista', 'bartender', 'general'];
+    final allDepartments = [
+      'kitchen',
+      'barista',
+      'bartender',
+      'waiter/waitress',
+      'general'
+    ];
     final queryWithoutKeywords = query.replaceAll(
         RegExp(r'(departemen|punya|akses|apa saja|yang dimiliki)\s*',
             caseSensitive: false),

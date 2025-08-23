@@ -34,6 +34,7 @@ class _UsersScreenState extends State<UsersScreen> {
     'kitchen',
     'barista',
     'bartender',
+    'waiter/waiteress',
   ];
   final List<String> _roles = ['staff', 'admin', 'supervisor', 'dev'];
   final List<String> _userRolesForDropdown = [
