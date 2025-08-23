@@ -1,4 +1,3 @@
-// Path: lib/screens/item_list_screen.dart
 import 'package:flutter/material.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
@@ -436,7 +435,6 @@ class _ItemListScreenState extends State<ItemListScreen> {
 
   Future<void> _showMassClassificationDialog(BuildContext context) async {
     List<Item> allItems = [];
-    List<String> selectedItemsIds = [];
     String? selectedClassification;
 
     try {
@@ -451,11 +449,49 @@ class _ItemListScreenState extends State<ItemListScreen> {
       return;
     }
 
+    // A temporary list to track user's selections.
+    List<String> selectedItemsIds = [];
+
+    // Use this list to find which items were originally selected, for comparison later.
+    List<String> originalSelectedItemsIds = [];
+
     await showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setStateSB) {
+            List<Item> itemsInSelectedClassification = [];
+            List<Item> unclassifiedItems = [];
+
+            if (selectedClassification != null) {
+              itemsInSelectedClassification = allItems
+                  .where(
+                      (item) => item.classification == selectedClassification)
+                  .toList();
+              unclassifiedItems = allItems
+                  .where((item) =>
+                      item.classification == null ||
+                      item.classification!.isEmpty)
+                  .toList();
+            } else {
+              unclassifiedItems = allItems
+                  .where((item) =>
+                      item.classification == null ||
+                      item.classification!.isEmpty)
+                  .toList();
+            }
+
+            // Sort both lists alphabetically
+            itemsInSelectedClassification
+                .sort((a, b) => a.name.compareTo(b.name));
+            unclassifiedItems.sort((a, b) => a.name.compareTo(b.name));
+
+            // Combine them with classified items at the top
+            List<Item> itemsToDisplay = [
+              ...itemsInSelectedClassification,
+              ...unclassifiedItems
+            ];
+
             return AlertDialog(
               title: const Text('Klasifikasi Massal Item',
                   style: TextStyle(fontWeight: FontWeight.bold)),
@@ -469,9 +505,21 @@ class _ItemListScreenState extends State<ItemListScreen> {
                     const SizedBox(height: 16),
                     if (_classifications.isNotEmpty)
                       DropdownButtonFormField<String>(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                             labelText: 'Pilih Klasifikasi',
-                            border: OutlineInputBorder()),
+                            border: const OutlineInputBorder(),
+                            suffixIcon: selectedClassification != null
+                                ? Padding(
+                                    padding: const EdgeInsets.only(right: 12.0),
+                                    child: Text(
+                                      '${selectedItemsIds.length} item',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color:
+                                              Theme.of(context).primaryColor),
+                                    ),
+                                  )
+                                : null),
                         value: selectedClassification,
                         items: _classifications.map((String classification) {
                           return DropdownMenuItem<String>(
@@ -481,7 +529,16 @@ class _ItemListScreenState extends State<ItemListScreen> {
                         onChanged: (String? newValue) {
                           setStateSB(() {
                             selectedClassification = newValue;
-                            // Keep selected items, do not reset here
+                            selectedItemsIds.clear();
+                            if (newValue != null) {
+                              selectedItemsIds.addAll(allItems
+                                  .where(
+                                      (item) => item.classification == newValue)
+                                  .map((item) => item.id!)
+                                  .toList());
+                            }
+                            originalSelectedItemsIds =
+                                List.from(selectedItemsIds);
                           });
                         },
                       ),
@@ -489,9 +546,9 @@ class _ItemListScreenState extends State<ItemListScreen> {
                     const Text('Pilih item yang akan diklasifikasi:'),
                     Expanded(
                       child: ListView.builder(
-                        itemCount: allItems.length,
+                        itemCount: itemsToDisplay.length,
                         itemBuilder: (context, index) {
-                          final item = allItems[index];
+                          final item = itemsToDisplay[index];
                           return CheckboxListTile(
                             title: Text(item.name),
                             subtitle: Text('Barcode: ${item.barcode}'),
@@ -524,29 +581,29 @@ class _ItemListScreenState extends State<ItemListScreen> {
                       ? () async {
                           try {
                             WriteBatch batch = _firestore.batch();
-                            Set<String> newSelectedIds =
-                                selectedItemsIds.toSet();
-                            Set<String> currentIds = allItems
-                                .where((item) =>
-                                    item.classification ==
-                                    selectedClassification)
-                                .map((item) => item.id!)
-                                .toSet();
+                            final newSelectedIdsSet = selectedItemsIds.toSet();
+                            final originalSelectedIdsSet =
+                                originalSelectedItemsIds.toSet();
 
-                            Set<String> idsToAdd =
-                                newSelectedIds.difference(currentIds);
-                            Set<String> idsToRemove =
-                                currentIds.difference(newSelectedIds);
+                            // Find items to add to the new classification
+                            final idsToAdd = newSelectedIdsSet
+                                .difference(originalSelectedIdsSet);
+                            // Find items to remove from the old classification
+                            final idsToRemove = originalSelectedIdsSet
+                                .difference(newSelectedIdsSet);
 
                             for (var id in idsToAdd) {
                               batch.update(
-                                  _firestore.collection('items').doc(id),
-                                  {'classification': selectedClassification});
+                                  _firestore.collection('items').doc(id), {
+                                'classification': selectedClassification,
+                              });
                             }
+
                             for (var id in idsToRemove) {
                               batch.update(
-                                  _firestore.collection('items').doc(id),
-                                  {'classification': null});
+                                  _firestore.collection('items').doc(id), {
+                                'classification': null,
+                              });
                             }
 
                             await batch.commit();
@@ -564,9 +621,7 @@ class _ItemListScreenState extends State<ItemListScreen> {
                       : null,
                   child: const Text('Simpan'),
                 ),
-                if (selectedClassification != null &&
-                    allItems.any((item) =>
-                        item.classification == selectedClassification))
+                if (selectedClassification != null)
                   ElevatedButton(
                     onPressed: () async {
                       try {
@@ -1437,22 +1492,6 @@ class _ItemListScreenState extends State<ItemListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: GestureDetector(
-        onHorizontalDragEnd: (details) {
-          if (_userRole != 'admin' && _userRole != 'dev') return;
-          if (details.primaryVelocity! > 0) {
-            if (_isGroupView) {
-              setState(() {
-                _isGroupView = false;
-              });
-            }
-          } else if (details.primaryVelocity! < 0) {
-            if (!_isGroupView) {
-              setState(() {
-                _isGroupView = true;
-              });
-            }
-          }
-        },
         child: Column(
           children: [
             Padding(
@@ -1637,115 +1676,6 @@ class _ItemListScreenState extends State<ItemListScreen> {
                                   padding:
                                       const EdgeInsets.symmetric(vertical: 12)),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 10),
-                  if (!_isGroupView)
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          FilterChip(
-                            label: const Text('Semua Item'),
-                            selected: _expiryFilter == 'Semua Item' &&
-                                _stockFilter == 'Semua Item' &&
-                                _classificationFilter == 'Semua Item',
-                            onSelected: (selected) {
-                              if (mounted) {
-                                setState(() {
-                                  _expiryFilter = 'Semua Item';
-                                  _stockFilter = 'Semua Item';
-                                  _classificationFilter = 'Semua Item';
-                                });
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          FilterChip(
-                            label: const Text('Stok Habis'),
-                            selected: _stockFilter == 'Stok Habis',
-                            onSelected: (selected) {
-                              if (mounted) {
-                                setState(() {
-                                  _stockFilter =
-                                      selected ? 'Stok Habis' : 'Semua Item';
-                                  if (selected) {
-                                    _expiryFilter = 'Semua Item';
-                                    _classificationFilter = 'Semua Item';
-                                  }
-                                });
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          FilterChip(
-                            label: const Text('Expiring < 1 Tahun'),
-                            selected: _expiryFilter == '1 Tahun',
-                            onSelected: (selected) {
-                              if (mounted) {
-                                setState(() {
-                                  _expiryFilter =
-                                      selected ? '1 Tahun' : 'Semua Item';
-                                  if (selected) {
-                                    _stockFilter = 'Semua Item';
-                                    _classificationFilter = 'Semua Item';
-                                  }
-                                });
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          FilterChip(
-                            label: const Text('Expiring < 6 Bulan'),
-                            selected: _expiryFilter == '6 Bulan',
-                            onSelected: (selected) {
-                              if (mounted) {
-                                setState(() {
-                                  _expiryFilter =
-                                      selected ? '6 Bulan' : 'Semua Item';
-                                  if (selected) {
-                                    _stockFilter = 'Semua Item';
-                                    _classificationFilter = 'Semua Item';
-                                  }
-                                });
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          FilterChip(
-                            label: const Text('Expiring < 5 Bulan'),
-                            selected: _expiryFilter == '5 Bulan',
-                            onSelected: (selected) {
-                              if (mounted) {
-                                setState(() {
-                                  _expiryFilter =
-                                      selected ? '5 Bulan' : 'Semua Item';
-                                  if (selected) {
-                                    _stockFilter = 'Semua Item';
-                                    _classificationFilter = 'Semua Item';
-                                  }
-                                });
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          FilterChip(
-                            label: const Text('Sudah Expired'),
-                            selected: _expiryFilter == 'Expired',
-                            onSelected: (selected) {
-                              if (mounted) {
-                                setState(() {
-                                  _expiryFilter =
-                                      selected ? 'Expired' : 'Semua Item';
-                                  if (selected) {
-                                    _stockFilter = 'Semua Item';
-                                    _classificationFilter = 'Semua Item';
-                                  }
-                                });
-                              }
-                            },
                           ),
                         ],
                       ),

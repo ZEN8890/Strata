@@ -1,4 +1,3 @@
-// Path: lib/screens/scan_barcode.dart
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'dart:async';
@@ -235,6 +234,7 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
         final fetchedItem = Item.fromFirestore(
             itemDoc.data() as Map<String, dynamic>, itemDoc.id);
 
+        // Allow 'admin' and 'dev' roles to access all items
         if (_userRole != 'admin' && _userRole != 'dev') {
           if (!fetchedItem.allowedDepartments.contains(_userDepartment)) {
             setState(() {
@@ -281,6 +281,7 @@ class _ScanBarcodeScreenState extends State<ScanBarcodeScreen> {
       return;
     }
 
+    // Allow 'admin' and 'dev' roles to process any item
     if (_userRole != 'admin' && _userRole != 'dev') {
       if (!_scannedItem!.allowedDepartments.contains(_userDepartment)) {
         _showNotification(

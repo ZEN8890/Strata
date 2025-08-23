@@ -1,4 +1,3 @@
-// Path: lib/screens/users_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:developer';
@@ -9,10 +8,11 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart' as path_provider;
+import 'package:path_provider/path_provider.dart';
 import 'dart:typed_data';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:share_plus/share_plus.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -41,8 +41,8 @@ class _UsersScreenState extends State<UsersScreen> {
     'supervisor',
   ];
 
-  bool _obscureNewUserPassword = true;
-  bool _obscureAdminPassword = true;
+  bool _isNewUserPasswordVisible = false;
+  bool _isAdminPasswordVisible = false;
 
   @override
   void initState() {
@@ -250,25 +250,25 @@ class _UsersScreenState extends State<UsersScreen> {
                       controller: passwordController,
                       decoration: InputDecoration(
                         labelText: 'Password Pengguna Baru (min. 6 karakter)',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                         isDense: true,
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _obscureNewUserPassword
+                            _isNewUserPasswordVisible
                                 ? Icons.visibility
                                 : Icons.visibility_off,
                           ),
                           onPressed: () {
                             setInnerState(() {
-                              _obscureNewUserPassword =
-                                  !_obscureNewUserPassword;
+                              _isNewUserPasswordVisible =
+                                  !_isNewUserPasswordVisible;
                             });
                           },
                         ),
                       ),
-                      obscureText: _obscureNewUserPassword,
+                      obscureText: !_isNewUserPasswordVisible,
                       validator: (value) => value!.length < 6
                           ? 'Password minimal 6 karakter'
                           : null,
@@ -281,24 +281,24 @@ class _UsersScreenState extends State<UsersScreen> {
                     controller: adminPasswordController,
                     decoration: InputDecoration(
                       labelText: 'Sandi Admin Anda',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                       isDense: true,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscureAdminPassword
+                          _isAdminPasswordVisible
                               ? Icons.visibility
                               : Icons.visibility_off,
                         ),
                         onPressed: () {
                           setInnerState(() {
-                            _obscureAdminPassword = !_obscureAdminPassword;
+                            _isAdminPasswordVisible = !_isAdminPasswordVisible;
                           });
                         },
                       ),
                     ),
-                    obscureText: _obscureAdminPassword,
+                    obscureText: !_isAdminPasswordVisible,
                     validator: (value) => value!.isEmpty
                         ? 'Sandi admin tidak boleh kosong.'
                         : null,
@@ -322,7 +322,6 @@ class _UsersScreenState extends State<UsersScreen> {
                       .doc(userToEdit!.id)
                       .update({
                     'name': nameController.text.trim(),
-                    // 'phoneNumber': phoneController.text.trim(), // Dihapus
                     'department': selectedDepartment,
                     'role': selectedRole,
                   });
@@ -387,6 +386,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       Navigator.of(context).pop();
                     }
                     _showNotification('Gagal!', message, isError: true);
+                    log('Error in add/edit user flow: $e');
                   } catch (e) {
                     _showNotification('Error', 'Terjadi kesalahan umum: $e',
                         isError: true);
@@ -484,25 +484,42 @@ class _UsersScreenState extends State<UsersScreen> {
 
       final excelBytes = excel.encode()!;
 
-      final String? resultPath = await FilePicker.platform.saveFile(
-        fileName: 'Daftar_Pengguna_Strata.xlsx',
-        type: FileType.custom,
-        allowedExtensions: ['xlsx'],
-      );
+      final String fileName = 'Daftar_Pengguna_Strata.xlsx';
 
-      if (!mounted) return;
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux) {
+        final String? resultPath = await FilePicker.platform.saveFile(
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ['xlsx'],
+        );
 
-      if (resultPath != null) {
-        final File file = File(resultPath);
-        await file.writeAsBytes(Uint8List.fromList(excelBytes));
-        _showNotification('Berhasil!',
-            'Daftar pengguna berhasil diekspor ke Excel di: $resultPath',
-            isError: false);
-        log('File Excel berhasil diekspor ke: $resultPath');
+        if (!mounted) return;
+
+        if (resultPath != null) {
+          final File file = File(resultPath);
+          await file.writeAsBytes(Uint8List.fromList(excelBytes));
+          _showNotification('Berhasil!',
+              'Daftar pengguna berhasil diekspor ke Excel di: $resultPath',
+              isError: false);
+          log('File Excel berhasil diekspor ke: $resultPath');
+        } else {
+          _showNotification('Ekspor Dibatalkan',
+              'Ekspor dibatalkan atau file tidak disimpan.',
+              isError: true);
+        }
       } else {
-        _showNotification(
-            'Ekspor Dibatalkan', 'Ekspor dibatalkan atau file tidak disimpan.',
-            isError: true);
+        final directory = await getApplicationDocumentsDirectory();
+        final filePath = '${directory.path}/$fileName';
+        final file = File(filePath);
+        await file.writeAsBytes(Uint8List.fromList(excelBytes), flush: true);
+        await Share.shareXFiles([XFile(filePath)],
+            text: 'Data pengguna Strata Lite');
+        if (!mounted) return;
+        _showNotification('Ekspor Berhasil',
+            'Data berhasil diekspor. Pilih aplikasi untuk menyimpan file.');
+        log('File Excel berhasil diekspor dan akan dibagikan: $filePath');
       }
     } catch (e) {
       _showNotification(
@@ -513,6 +530,10 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Future<void> _importUsersFromExcel() async {
+    if (!mounted) return;
+    bool hasPermission = await _requestStoragePermission(context);
+    if (!hasPermission) return;
+
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -639,6 +660,133 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
+  Future<void> _downloadImportTemplate() async {
+    try {
+      final excel = Excel.createExcel();
+      final defaultSheetName = excel.getDefaultSheet()!;
+      excel.rename(defaultSheetName, 'Template Import Pengguna');
+      final sheet = excel['Template Import Pengguna'];
+
+      List<String> headers = [
+        'Nama Lengkap',
+        'Username',
+        'Departemen',
+        'Role',
+        'Password'
+      ];
+      sheet.insertRowIterables(
+          headers.map((e) => TextCellValue(e)).toList(), 0);
+
+      final excelBytes = excel.encode()!;
+
+      final String fileName = 'Template_Import_Pengguna_Strata.xlsx';
+
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux) {
+        final String? resultPath = await FilePicker.platform.saveFile(
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ['xlsx'],
+        );
+
+        if (!mounted) return;
+
+        if (resultPath != null) {
+          final File file = File(resultPath);
+          await file.writeAsBytes(Uint8List.fromList(excelBytes));
+          _showNotification('Berhasil!',
+              'Template impor Excel berhasil diunduh ke: $resultPath',
+              isError: false);
+          log('File template berhasil diunduh ke: $resultPath');
+        } else {
+          _showNotification('Pengunduhan Dibatalkan',
+              'Pengunduhan template dibatalkan atau file tidak disimpan.',
+              isError: true);
+        }
+      } else {
+        final directory = await getApplicationDocumentsDirectory();
+        final filePath = '${directory.path}/$fileName';
+        final file = File(filePath);
+        await file.writeAsBytes(Uint8List.fromList(excelBytes), flush: true);
+        await Share.shareXFiles([XFile(filePath)],
+            text: 'Template impor pengguna Strata Lite');
+        if (!mounted) return;
+        _showNotification('Berhasil!',
+            'Template impor Excel berhasil diunduh. Pilih aplikasi untuk menyimpan file.',
+            isError: false);
+        log('File template berhasil diunduh dan akan dibagikan: $filePath');
+      }
+    } catch (e) {
+      _showNotification('Gagal Download Template',
+          'Terjadi kesalahan saat mengunduh template: $e',
+          isError: true);
+      log('Error downloading template: $e');
+    }
+  }
+
+  Future<bool> _requestStoragePermission(BuildContext context) async {
+    log('Requesting storage permission...');
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      if (Theme.of(context).platform == TargetPlatform.android) {
+        var status = await Permission.storage.request();
+        if (status.isGranted) {
+          return true;
+        } else if (status.isPermanentlyDenied) {
+          if (!context.mounted) return false;
+          _showPermissionDeniedDialog(context, 'Izin Penyimpanan Diperlukan',
+              'Untuk mengimpor/mengekspor file Excel, aplikasi membutuhkan izin penyimpanan. Harap izinkan secara manual di Pengaturan Aplikasi.');
+          return false;
+        }
+      }
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      var status = await Permission.photos.request();
+      if (status.isGranted) {
+        return true;
+      } else if (status.isPermanentlyDenied) {
+        if (!context.mounted) return false;
+        _showPermissionDeniedDialog(context, 'Izin Foto Diperlukan',
+            'Untuk mengimpor/mengekspor file, aplikasi membutuhkan izin akses foto. Harap izinkan secara manual di Pengaturan Aplikasi.');
+        return false;
+      }
+    } else if (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux) {
+      log('Platform desktop, assuming file access is granted.');
+      return true;
+    }
+    _showNotification('Platform Tidak Didukung',
+        'Platform ini tidak didukung untuk operasi file.',
+        isError: true);
+    return false;
+  }
+
+  void _showPermissionDeniedDialog(
+      BuildContext context, String title, String content) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              openAppSettings();
+            },
+            child: const Text('Buka Pengaturan'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<String?> _showAdminPasswordDialog() async {
     TextEditingController passwordController = TextEditingController();
     return await showDialog<String>(
@@ -649,18 +797,18 @@ class _UsersScreenState extends State<UsersScreen> {
           content: StatefulBuilder(builder: (context, setInnerState) {
             return TextField(
               controller: passwordController,
-              obscureText: _obscureAdminPassword,
+              obscureText: !_isAdminPasswordVisible,
               decoration: InputDecoration(
                 hintText: 'Masukkan sandi admin',
                 suffixIcon: IconButton(
                   icon: Icon(
-                    _obscureAdminPassword
+                    _isAdminPasswordVisible
                         ? Icons.visibility
                         : Icons.visibility_off,
                   ),
                   onPressed: () {
                     setInnerState(() {
-                      _obscureAdminPassword = !_obscureAdminPassword;
+                      _isAdminPasswordVisible = !_isAdminPasswordVisible;
                     });
                   },
                 ),
@@ -684,53 +832,6 @@ class _UsersScreenState extends State<UsersScreen> {
         );
       },
     );
-  }
-
-  Future<void> _downloadImportTemplate() async {
-    try {
-      final excel = Excel.createExcel();
-      final defaultSheetName = excel.getDefaultSheet()!;
-      excel.rename(defaultSheetName, 'Template Import Pengguna');
-      final sheet = excel['Template Import Pengguna'];
-
-      List<String> headers = [
-        'Nama Lengkap',
-        'Username',
-        'Departemen',
-        'Role',
-        'Password'
-      ];
-      sheet.insertRowIterables(
-          headers.map((e) => TextCellValue(e)).toList(), 0);
-
-      final excelBytes = excel.encode()!;
-
-      final String? resultPath = await FilePicker.platform.saveFile(
-        fileName: 'Template_Import_Pengguna_Strata.xlsx',
-        type: FileType.custom,
-        allowedExtensions: ['xlsx'],
-      );
-
-      if (!mounted) return;
-
-      if (resultPath != null) {
-        final File file = File(resultPath);
-        await file.writeAsBytes(Uint8List.fromList(excelBytes));
-        _showNotification('Berhasil!',
-            'Template impor Excel berhasil diunduh ke: $resultPath',
-            isError: false);
-        log('File template berhasil diunduh ke: $resultPath');
-      } else {
-        _showNotification('Pengunduhan Dibatalkan',
-            'Pengunduhan template dibatalkan atau file tidak disimpan.',
-            isError: true);
-      }
-    } catch (e) {
-      _showNotification('Gagal Download Template',
-          'Terjadi kesalahan saat mengunduh template: $e',
-          isError: true);
-      log('Error downloading template: $e');
-    }
   }
 
   void _showImportExportOptions() {
